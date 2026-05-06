@@ -1,0 +1,863 @@
+<!DOCTYPE html>
+<html lang="lo">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ລະບົບວິເຄາະຜົນການທົດສອບ (Pre/Post Test Dashboard)</title>
+    
+    <!-- React & ReactDOM -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- SheetJS for Excel parsing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    
+    <!-- Recharts -->
+    <script src="https://unpkg.com/prop-types/prop-types.min.js"></script>
+    <script src="https://unpkg.com/recharts@2.1.12/umd/Recharts.js"></script>
+
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Lao:wght@300;400;500;600;700&display=swap');
+        body {
+            font-family: 'Noto Sans Lao', sans-serif;
+            background-color: #f3f4f6;
+        }
+        /* Custom Scrollbar for tables */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: #f1f1f1; 
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #cbd5e1; 
+            border-radius: 10px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8; 
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo, useRef } = React;
+        const { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } = window.Recharts;
+
+        // Gemini API Configuration
+        const apiKey = ""; // API Key ຈະຖືກໃຊ້ຈາກ Environment ຖ້າມີ
+
+        // ວັດຈະນານຸກົມ (Dictionary) ສຳລັບ 2 ພາສາ
+        const translations = {
+            lo: {
+                appTitleDefault: "Data Literacy: ວິເຄາະຜົນການທົດສອບ",
+                exportBtn: "Export Report (.doc)",
+                clearBtn: "ລຶບຂໍ້ມູນ (Clear)",
+                provinceLabel: "ແຂວງ:",
+                allProvinces: "-- ທັງໝົດ (All) --",
+                startAnalysis: "ເລີ່ມຕົ້ນການວິເຄາະ",
+                uploadDesc: "ກະລຸນາອັບໂຫຼດໄຟລ໌ Excel (.xlsx, .xls) ຂອງແບບທົດສອບ Pre/Post-test ຂອງທ່ານລົງໃນນີ້.",
+                uploadBtn: "ອັບໂຫຼດໄຟລ໌ Excel",
+                totalParticipants: "ຜູ້ເຂົ້າຮ່ວມທັງໝົດ",
+                times: "ຄັ້ງ",
+                genderRatio: "ອັດຕາສ່ວນ ຍິງ/ຊາຍ",
+                genderDesc: "ຍິງ / ຊາຍ (ຈາກຂໍ້ມູນທັງໝົດ)",
+                avgPre: "ຄະແນນສະເລ່ຍ (ກ່ອນອົບຮົມ)",
+                avgPreSub: "Pre-test Average Score",
+                avgPost: "ຄະແນນສະເລ່ຍ (ຫຼັງອົບຮົມ)",
+                increased: "ເພີ່ມຂຶ້ນ",
+                qTableTitle: "ອັດຕາການຕອບຖືກແຕ່ລະຄຳຖາມ (Pre vs Post)",
+                translateLoading: "ກຳລັງແປຄຳຖາມ...",
+                code: "ລະຫັດ",
+                qTopic: "ຫົວຂໍ້ຄຳຖາມ",
+                improvement: "ພັດທະນາການ",
+                aiTitle: "ວິເຄາະຈຸດອ່ອນ ດ້ວຍ Gemini AI",
+                aiDesc: "ຫົວຂໍ້ທີ່ຜູ້ເຂົ້າຮ່ວມຍັງມີຄວາມເຂົ້າໃຈໜ້ອຍທີ່ສຸດ ຫຼັງຈາກການອົບຮົມ",
+                generateAiBtn: "ສ້າງຄຳແນະນຳ (Generate Advice)",
+                aiLoading: "ກຳລັງວິເຄາະຂໍ້ມູນ ແລະ ແປພາສາ...",
+                aiError: "ບໍ່ສາມາດດຶງຂໍ້ມູນຈາກ AI ໄດ້ໃນຂະນະນີ້. ກະລຸນາລອງໃໝ່ພາຍຫຼັງ.",
+                orgChartTitle: "ປຽບທຽບຄະແນນສະເລ່ຍ ຕາມປະເພດອົງການຈັດຕັ້ງ (Organization Type)",
+                preTestName: "ກ່ອນອົບຮົມ (Pre-test)",
+                postTestName: "ຫຼັງອົບຮົມ (Post-test)",
+                aiPromptLang: "ເປັນພາສາລາວ (Lao language)",
+                aiSystemInstruction: "ຕອບເປັນພາສາລາວເທົ່ານັ້ນ. ໃຫ້ຄຳແນະນຳທີ່ເປັນປະໂຫຍດ ແລະ ສາມາດນຳໄປປະຕິບັດໄດ້ຈິງ.",
+                reportTitle: "ບົດລາຍງານການປະເມີນຜົນການຝຶກອົບຮົມ Data Literacy",
+                repSec1: "1. ຂໍ້ມູນທົ່ວໄປຂອງຜູ້ເຂົ້າຮ່ວມ",
+                repTotal: "ຈຳນວນການທົດສອບທັງໝົດ:",
+                repGender: "ອັດຕາສ່ວນຜູ້ເຂົ້າຮ່ວມ: ຍິງ",
+                repMale: "ຄົນ, ຊາຍ",
+                repPeople: "ຄົນ",
+                repSec2: "2. ສະຫຼຸບຜົນການທົດສອບ (KPIs)",
+                repPre: "ຄະແນນສະເລ່ຍກ່ອນການອົບຮົມ (Pre-test):",
+                repPost: "ຄະແນນສະເລ່ຍຫຼັງການອົບຮົມ (Post-test):",
+                repImprov: "ພັດທະນາການ (ຄວາມຮູ້ເພີ່ມຂຶ້ນ):",
+                repPoints: "ຄະແນນ",
+                repSec3: "3. ຈຸດທີ່ຄວນປັບປຸງ (ຄຳຖາມທີ່ຜູ້ເຂົ້າຮ່ວມຍັງມີຄວາມເຂົ້າໃຈໜ້ອຍ)",
+                repScore: "ຄະແນນຫຼັງອົບຮົມ",
+                repSec4: "4. ຂໍ້ສະເໜີແນະສຳລັບການອົບຮົມຄັ້ງຕໍ່ໄປ (ຈາກ AI ວິເຄາະ)",
+                repNoAi: "ຍັງບໍ່ໄດ້ສ້າງຄຳແນະນຳຈາກ AI ຫຼັງການວິເຄາະ. (ກະລຸນາກົດປຸ່ມ 'ສ້າງຄຳແນະນຳ' ໃນ Dashboard ກ່ອນ Export)"
+            },
+            en: {
+                appTitleDefault: "Data Literacy: Pre/Post Test Analysis",
+                exportBtn: "Export Report (.doc)",
+                clearBtn: "Clear Data",
+                provinceLabel: "Province:",
+                allProvinces: "-- All --",
+                startAnalysis: "Start Analysis",
+                uploadDesc: "Please upload your Excel file (.xlsx, .xls) of the Pre/Post-test here.",
+                uploadBtn: "Upload Excel File",
+                totalParticipants: "Total Participants",
+                times: "records",
+                genderRatio: "Gender Ratio (F/M)",
+                genderDesc: "Female / Male (from all data)",
+                avgPre: "Average Score (Pre-test)",
+                avgPreSub: "Pre-test Average Score",
+                avgPost: "Average Score (Post-test)",
+                increased: "Increased by",
+                qTableTitle: "Correct Response Rate per Question (Pre vs Post)",
+                translateLoading: "Translating questions...",
+                code: "Code",
+                qTopic: "Question Topic",
+                improvement: "Improvement",
+                aiTitle: "Weakness Analysis with Gemini AI",
+                aiDesc: "Topics where participants have the least understanding after training",
+                generateAiBtn: "Generate Advice",
+                aiLoading: "Analyzing data and translating...",
+                aiError: "Cannot fetch data from AI at the moment. Please try again later.",
+                orgChartTitle: "Average Score Comparison by Organization Type",
+                preTestName: "Pre-test",
+                postTestName: "Post-test",
+                aiPromptLang: "in English",
+                aiSystemInstruction: "Answer in English only. Provide practical and actionable advice based on the data.",
+                reportTitle: "Data Literacy Training Evaluation Report",
+                repSec1: "1. General Participant Information",
+                repTotal: "Total records:",
+                repGender: "Gender ratio: Female",
+                repMale: "persons, Male",
+                repPeople: "persons",
+                repSec2: "2. Test Results Summary (KPIs)",
+                repPre: "Average Pre-test score:",
+                repPost: "Average Post-test score:",
+                repImprov: "Improvement (knowledge gain):",
+                repPoints: "points",
+                repSec3: "3. Areas for Improvement (Lowest scoring questions)",
+                repScore: "Post-test score",
+                repSec4: "4. Recommendations for Future Training (AI Analysis)",
+                repNoAi: "AI recommendation has not been generated yet. (Please click 'Generate Advice' in the Dashboard before exporting)"
+            }
+        };
+
+        // Helper function for API calls with Exponential Backoff
+        const fetchWithRetry = async (url, options, retries = 5) => {
+            const delays = [1000, 2000, 4000, 8000, 16000];
+            for (let i = 0; i < retries; i++) {
+                try {
+                    const response = await fetch(url, options);
+                    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                    return await response.json();
+                } catch (error) {
+                    if (i === retries - 1) throw error;
+                    await new Promise(res => setTimeout(res, delays[i]));
+                }
+            }
+        };
+
+        const App = () => {
+            const [lang, setLang] = useState('lo'); // State ສຳລັບພາສາ
+            const t = translations[lang];
+
+            const [rawData, setRawData] = useState([]);
+            const [filteredData, setFilteredData] = useState([]);
+            const [provinces, setProvinces] = useState([]);
+            const [selectedProvince, setSelectedProvince] = useState("All");
+            const [provinceKey, setProvinceKey] = useState("province");
+            const [dashboardTitle, setDashboardTitle] = useState(translations['lo'].appTitleDefault);
+            
+            const [questionsMap, setQuestionsMap] = useState([]);
+            const [maxScore, setMaxScore] = useState(0);
+            
+            const [aiRecommendation, setAiRecommendation] = useState("");
+            const [isAiLoading, setIsAiLoading] = useState(false);
+            const [aiError, setAiError] = useState("");
+            const [sortConfig, setSortConfig] = useState({ key: 'key', direction: 'asc' });
+            const [totalScoreKey, setTotalScoreKey] = useState("Total score");
+            const [isTranslatingQuestions, setIsTranslatingQuestions] = useState(false);
+            const isTranslatingRef = useRef(false);
+
+            // --- 1. File Upload & Data Processing ---
+            const handleFileUpload = (event) => {
+                const file = event.target.files[0];
+                if (file) {
+                    // ປ່ຽນຊື່ Title ຕາມຊື່ໄຟລ໌
+                    const fileNameWithoutExt = file.name.replace(/\.[^/.]+$/, "");
+                    const newTitle = `${fileNameWithoutExt} Pre/post test`;
+                    setDashboardTitle(newTitle);
+                    document.title = newTitle;
+
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        const data = new Uint8Array(e.target.result);
+                        const workbook = window.XLSX.read(data, { type: 'array' });
+                        const firstSheetName = workbook.SheetNames[0];
+                        const worksheet = workbook.Sheets[firstSheetName];
+                        // Convert to JSON
+                        const json = window.XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+                        if (json.length > 0) {
+                            const headers = Object.keys(json[0]);
+                            processExcelData(json, headers);
+                        }
+                    };
+                    reader.readAsArrayBuffer(file);
+                }
+            };
+
+            const processExcelData = (data, headers) => {
+                // Find dynamic cal columns and map to questions
+                const calCols = headers.filter(h => /^cal\d+/i.test(h));
+                
+                // ຈັດລຽງຄຳຖາມ (cal1, cal2, cal3...) ແຕ່ໜ້ອຍຫາໃຫຍ່
+                calCols.sort((a, b) => {
+                    const numA = parseInt(a.match(/\d+/)[0]);
+                    const numB = parseInt(b.match(/\d+/)[0]);
+                    return numA - numB;
+                });
+
+                // ຊອກຫາ Column ທີ່ຢູ່ຖັດຈາກ cal ໂຕສຸດທ້າຍ ເພື່ອໃຊ້ເປັນ ຄະແນນລວມ
+                let maxCalIndex = -1;
+                calCols.forEach(cal => {
+                    const idx = headers.indexOf(cal);
+                    if (idx > maxCalIndex) {
+                        maxCalIndex = idx;
+                    }
+                });
+
+                if (maxCalIndex !== -1 && maxCalIndex + 1 < headers.length) {
+                    setTotalScoreKey(headers[maxCalIndex + 1]);
+                } else {
+                    setTotalScoreKey("Total score");
+                }
+
+                const questionCols = headers.filter(h => /^\d+\./.test(h));
+                
+                const qMap = [];
+                calCols.forEach(cal => {
+                    const numMatch = cal.match(/\d+/);
+                    if (numMatch) {
+                        const num = numMatch[0];
+                        // Find column starting with "num."
+                        const qText = questionCols.find(q => q.startsWith(`${num}.`)) || `Question ${num}`;
+                        // ບັນທຶກທັງພາສາອັງກິດຕົ້ນສະບັບ ແລະ ກຽມຊ່ອງຫວ່າງໄວ້ສຳລັບພາສາລາວ
+                        qMap.push({ key: cal, originalText: qText, translatedText: null });
+                    }
+                });
+                
+                setQuestionsMap(qMap);
+                setMaxScore(calCols.length);
+
+                // ຊອກຫາຖັນ province ທຳອິດນັບຈາກຊ້າຍໄປຂວາ
+                const pKey = headers.find(h => h.toLowerCase().trim() === 'province') || 'province';
+                setProvinceKey(pKey);
+
+                // Extract unique provinces ໂດຍໃຊ້ pKey
+                const uniqueProvinces = [...new Set(data.map(row => row[pKey]).filter(Boolean))];
+                setProvinces(uniqueProvinces.sort());
+
+                setRawData(data);
+                setFilteredData(data);
+            };
+
+            // --- Function Clear Data ---
+            const clearData = () => {
+                setRawData([]);
+                setFilteredData([]);
+                setProvinces([]);
+                setSelectedProvince("All");
+                setQuestionsMap([]);
+                setMaxScore(0);
+                setAiRecommendation("");
+                setAiError("");
+                setSortConfig({ key: 'key', direction: 'asc' });
+                setTotalScoreKey("Total score");
+                
+                // ຣີເຊັດ Title
+                setDashboardTitle(translations[lang].appTitleDefault);
+                document.title = translations[lang].appTitleDefault;
+                
+                // ລ້າງຄ່າໃນ Input File ເພື່ອໃຫ້ສາມາດອັບໂຫຼດໄຟລ໌ເດີມຊ້ຳໄດ້
+                const fileInput = document.getElementById("fileUploadInput");
+                if (fileInput) fileInput.value = "";
+            };
+
+            // --- Function Translate Questions Auto ---
+            const translateQuestionsAuto = async () => {
+                if (questionsMap.length === 0) return;
+                
+                isTranslatingRef.current = true;
+                setIsTranslatingQuestions(true);
+                
+                try {
+                    const prompt = "Translate the following list of questions into Lao language. Maintain the exact meaning. Respond ONLY with a valid JSON object containing an array of the translated strings under the key 'translations'.";
+                    const questionsList = questionsMap.map((q, i) => `${i+1}. ${q.originalText}`).join('\n');
+                    const fullPrompt = `${prompt}\n\nQuestions:\n${questionsList}`;
+
+                    const payload = {
+                        contents: [{ parts: [{ text: fullPrompt }] }],
+                        generationConfig: {
+                            responseMimeType: "application/json",
+                            responseSchema: {
+                                type: "OBJECT",
+                                properties: {
+                                    translations: {
+                                        type: "ARRAY",
+                                        items: { type: "STRING" }
+                                    }
+                                }
+                            }
+                        }
+                    };
+
+                    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+                    const result = await fetchWithRetry(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    const textResponse = result.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (textResponse) {
+                        const parsed = JSON.parse(textResponse);
+                        if (parsed.translations && parsed.translations.length === questionsMap.length) {
+                            const newQMap = questionsMap.map((q, i) => ({
+                                ...q,
+                                translatedText: parsed.translations[i] 
+                            }));
+                            setQuestionsMap(newQMap);
+                        }
+                    }
+                } catch (error) {
+                    console.error("Translation Error:", error);
+                } finally {
+                    setIsTranslatingQuestions(false);
+                    isTranslatingRef.current = false;
+                }
+            };
+
+            // --- Effect: Auto-translate when language is set to 'lo' ---
+            useEffect(() => {
+                if (lang === 'lo' && questionsMap.length > 0) {
+                    // ກວດສອບວ່າຍັງບໍ່ທັນມີຄຳແປ ແລະ ບໍ່ໄດ້ກຳລັງແປຢູ່
+                    if (questionsMap[0].translatedText === null && !isTranslatingRef.current) {
+                        translateQuestionsAuto();
+                    }
+                }
+            }, [lang, questionsMap]);
+
+
+            // --- Filter Effect ---
+            useEffect(() => {
+                if (selectedProvince === "All") {
+                    setFilteredData(rawData);
+                } else {
+                    setFilteredData(rawData.filter(row => row[provinceKey] === selectedProvince));
+                }
+                // Reset AI when filter or language changes
+                setAiRecommendation("");
+            }, [selectedProvince, rawData, provinceKey, lang]);
+
+            // --- 2. Calculate KPIs ---
+            const kpis = useMemo(() => {
+                const preData = filteredData.filter(d => String(d['Is this pre or post test?'] || '').toLowerCase().includes('pre'));
+                const postData = filteredData.filter(d => String(d['Is this pre or post test?'] || '').toLowerCase().includes('post'));
+                
+                const getAvg = (dataArr) => {
+                    if (dataArr.length === 0) return "0.00";
+                    const sum = dataArr.reduce((acc, row) => acc + (parseFloat(row[totalScoreKey]) || 0), 0);
+                    return (sum / dataArr.length).toFixed(2);
+                };
+
+                const males = filteredData.filter(d => String(d['Gender'] || '').toLowerCase() === 'male').length;
+                const females = filteredData.filter(d => String(d['Gender'] || '').toLowerCase() === 'female').length;
+
+                return {
+                    total: filteredData.length,
+                    males,
+                    females,
+                    preCount: preData.length,
+                    postCount: postData.length,
+                    preAvg: getAvg(preData),
+                    postAvg: getAvg(postData)
+                };
+            }, [filteredData, totalScoreKey]);
+
+            // --- 3. Question Analysis (Table Data) ---
+            const questionStats = useMemo(() => {
+                if (questionsMap.length === 0 || filteredData.length === 0) return [];
+
+                const preData = filteredData.filter(d => String(d['Is this pre or post test?'] || '').toLowerCase().includes('pre'));
+                const postData = filteredData.filter(d => String(d['Is this pre or post test?'] || '').toLowerCase().includes('post'));
+
+                const calcPercent = (dataArr, calKey) => {
+                    if (dataArr.length === 0) return 0;
+                    const sum = dataArr.reduce((acc, row) => acc + (parseInt(row[calKey]) || 0), 0);
+                    return ((sum / dataArr.length) * 100).toFixed(1);
+                };
+
+                const stats = questionsMap.map(q => {
+                    const prePercent = parseFloat(calcPercent(preData, q.key));
+                    const postPercent = parseFloat(calcPercent(postData, q.key));
+                    
+                    // ເລືອກສະແດງຄຳຖາມຕາມພາສາ (ຖ້າເປັນ 'lo' ແລະ ມີຄຳແປແລ້ວ ໃຫ້ໃຊ້ພາສາລາວ)
+                    const displayText = (lang === 'lo' && q.translatedText) ? q.translatedText : q.originalText;
+
+                    return {
+                        ...q,
+                        text: displayText,
+                        prePercent,
+                        postPercent,
+                        improvement: (postPercent - prePercent).toFixed(1)
+                    };
+                });
+
+                return stats;
+            }, [filteredData, questionsMap, lang]);
+
+            // Get bottom 3-5 questions
+            const bottomQuestions = useMemo(() => {
+                return [...questionStats].sort((a, b) => a.postPercent - b.postPercent).slice(0, 4); 
+            }, [questionStats]);
+
+            // Data ສຳລັບຕາລາງທີ່ສາມາດ Sort ໄດ້
+            const sortedQuestionStats = useMemo(() => {
+                let sortableItems = [...questionStats];
+                if (sortConfig !== null) {
+                    sortableItems.sort((a, b) => {
+                        let aVal = a[sortConfig.key];
+                        let bVal = b[sortConfig.key];
+
+                        if (sortConfig.key === 'key') {
+                            aVal = parseInt(String(aVal).match(/\d+/)?.[0] || 0);
+                            bVal = parseInt(String(bVal).match(/\d+/)?.[0] || 0);
+                        } else if (sortConfig.key === 'improvement') {
+                            aVal = parseFloat(aVal);
+                            bVal = parseFloat(bVal);
+                        } else if (typeof aVal === 'string') {
+                            aVal = aVal.toLowerCase();
+                            bVal = bVal.toLowerCase();
+                        }
+
+                        if (aVal < bVal) {
+                            return sortConfig.direction === 'asc' ? -1 : 1;
+                        }
+                        if (aVal > bVal) {
+                            return sortConfig.direction === 'asc' ? 1 : -1;
+                        }
+                        return 0;
+                    });
+                }
+                return sortableItems;
+            }, [questionStats, sortConfig]);
+
+            const requestSort = (key) => {
+                let direction = 'asc';
+                if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
+                    direction = 'desc';
+                }
+                setSortConfig({ key, direction });
+            };
+
+            // --- 4. Organization Analysis ---
+            const orgStats = useMemo(() => {
+                const orgs = {};
+                filteredData.forEach(row => {
+                    const org = row['Organization type:'] || 'Unknown';
+                    const isPre = String(row['Is this pre or post test?'] || '').toLowerCase().includes('pre');
+                    const score = parseFloat(row[totalScoreKey]) || 0;
+
+                    if (!orgs[org]) orgs[org] = { org, preSum: 0, preCount: 0, postSum: 0, postCount: 0 };
+                    
+                    if (isPre) {
+                        orgs[org].preSum += score;
+                        orgs[org].preCount += 1;
+                    } else {
+                        orgs[org].postSum += score;
+                        orgs[org].postCount += 1;
+                    }
+                });
+
+                return Object.values(orgs).map(o => ({
+                    name: o.org,
+                    Pre_test: o.preCount ? parseFloat((o.preSum / o.preCount).toFixed(2)) : 0,
+                    Post_test: o.postCount ? parseFloat((o.postSum / o.postCount).toFixed(2)) : 0,
+                })).filter(o => o.Pre_test > 0 || o.Post_test > 0);
+            }, [filteredData, totalScoreKey]);
+
+            // --- 5. Ask Gemini ---
+            const getAIRecommendation = async () => {
+                if (bottomQuestions.length === 0) return;
+                
+                setIsAiLoading(true);
+                setAiError("");
+                setAiRecommendation("");
+
+                const questionTextList = bottomQuestions.map((q, i) => `${i+1}. ${q.text} (${t.repScore}: ${q.postPercent}%)`).join('\n');
+                
+                const prompt = `
+                    As a Data Literacy training expert.
+                    These are the test questions where participants scored the lowest (bottom ${bottomQuestions.length}) after the training:
+                    
+                    ${questionTextList}
+                    
+                    Please write brief, concise advice (max 3 paragraphs) ${t.aiPromptLang} 
+                    suggesting how trainers should improve their teaching methods or what topics to emphasize more in the next session for these specific topics.
+                    Ensure your final response is translated entirely into ${t.aiPromptLang}.
+                `;
+
+                try {
+                    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+                    const payload = {
+                        contents: [{ parts: [{ text: prompt }] }],
+                        systemInstruction: { parts: [{ text: t.aiSystemInstruction }] }
+                    };
+
+                    const result = await fetchWithRetry(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (text) {
+                        setAiRecommendation(text);
+                    } else {
+                        throw new Error("Invalid response format");
+                    }
+                } catch (error) {
+                    console.error("AI Error:", error);
+                    setAiError(t.aiError);
+                } finally {
+                    setIsAiLoading(false);
+                }
+            };
+
+            // --- 6. Export Narrative Report ---
+            const exportNarrativeReport = () => {
+                const aiText = aiRecommendation 
+                    ? aiRecommendation.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br/>') 
+                    : t.repNoAi;
+                
+                const htmlContent = `
+                    <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+                    <head><meta charset='utf-8'><title>${dashboardTitle}</title></head>
+                    <body style="font-family: 'Phetsarath OT', 'Saysettha OT', sans-serif;">
+                        <h2 style="text-align: center;">${t.reportTitle}</h2>
+                        <h3 style="text-align: center; color: #1e40af;">${dashboardTitle}</h3>
+                        <br/>
+                        <h3>${t.repSec1}</h3>
+                        <ul>
+                            <li>${t.repTotal} ${kpis.total} ${t.times} (Pre-test: ${kpis.preCount}, Post-test: ${kpis.postCount})</li>
+                            <li>${t.repGender} ${kpis.females} ${t.repMale} ${kpis.males} ${t.repPeople}</li>
+                        </ul>
+                        <h3>${t.repSec2}</h3>
+                        <ul>
+                            <li>${t.repPre} ${kpis.preAvg} / ${maxScore}</li>
+                            <li>${t.repPost} ${kpis.postAvg} / ${maxScore}</li>
+                            <li>${t.repImprov} +${(kpis.postAvg - kpis.preAvg).toFixed(2)} ${t.repPoints}</li>
+                        </ul>
+                        <h3>${t.repSec3}</h3>
+                        <ul>
+                            ${bottomQuestions.map(q => `<li>${q.text} (${t.repScore}: ${q.postPercent}%)</li>`).join('')}
+                        </ul>
+                        <h3>${t.repSec4}</h3>
+                        <p>${aiText}</p>
+                    </body>
+                    </html>
+                `;
+
+                const blob = new Blob(['\ufeff', htmlContent], {
+                    type: 'application/msword'
+                });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                
+                // ຕັ້ງຊື່ໄຟລ໌ຕາມ dashboardTitle ແລະ ຕັດຕົວອັກສອນພິເສດທີ່ອາດຈະມີບັນຫາໃນການຕັ້ງຊື່ໄຟລ໌
+                const safeFileName = dashboardTitle.replace(/[^a-zA-Z0-9\u0E80-\u0EFF\s_-]/g, "_").trim();
+                link.download = `${safeFileName || 'Export'}_Report_${lang.toUpperCase()}.doc`;
+                
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+            };
+
+            return (
+                <div className="min-h-screen pb-12">
+                    {/* Header bar */}
+                    <nav className="bg-blue-800 text-white shadow-md p-4 sticky top-0 z-50">
+                        <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
+                            <h1 className="text-xl lg:text-2xl font-bold flex items-center gap-2">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
+                                {dashboardTitle}
+                            </h1>
+                            
+                            <div className="flex flex-wrap items-center gap-3">
+                                {/* Language Switcher */}
+                                <div className="flex bg-blue-700 rounded p-1 shadow-inner">
+                                    <button 
+                                        onClick={() => setLang('lo')} 
+                                        className={`px-3 py-1 text-sm rounded transition ${lang === 'lo' ? 'bg-white text-blue-800 font-bold shadow' : 'text-blue-100 hover:text-white'}`}
+                                    >
+                                        ລາວ
+                                    </button>
+                                    <button 
+                                        onClick={() => setLang('en')} 
+                                        className={`px-3 py-1 text-sm rounded transition ${lang === 'en' ? 'bg-white text-blue-800 font-bold shadow' : 'text-blue-100 hover:text-white'}`}
+                                    >
+                                        EN
+                                    </button>
+                                </div>
+
+                                {rawData.length > 0 && (
+                                    <>
+                                        <button 
+                                            onClick={clearData}
+                                            className="bg-red-500 hover:bg-red-600 text-white text-sm px-3 py-1.5 rounded flex items-center gap-2 shadow transition"
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>
+                                            {t.clearBtn}
+                                        </button>
+                                        <button 
+                                            onClick={exportNarrativeReport}
+                                            className="bg-green-600 hover:bg-green-700 text-white text-sm px-3 py-1.5 rounded flex items-center gap-2 shadow transition"
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M15 18a3 3 0 1 0-6 0"/><path d="M15 18v-8a3 3 0 1 0-6 0v8"/><path d="M15 18a3 3 0 1 1-6 0"/><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg>
+                                            {t.exportBtn}
+                                        </button>
+                                    </>
+                                )}
+                                <div className="bg-blue-700 rounded p-1 flex items-center">
+                                    <label className="text-sm font-medium mr-2 ml-2">{t.provinceLabel}</label>
+                                    <select 
+                                        className="bg-white text-black text-sm rounded px-2 py-1 outline-none max-w-[150px] truncate"
+                                        value={selectedProvince}
+                                        onChange={(e) => setSelectedProvince(e.target.value)}
+                                    >
+                                        <option value="All">{t.allProvinces}</option>
+                                        {provinces.map(p => <option key={p} value={p}>{p}</option>)}
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    </nav>
+
+                    <div className="max-w-7xl mx-auto mt-6 px-4">
+                        {/* File Upload Section */}
+                        {rawData.length === 0 && (
+                            <div className="bg-white p-8 rounded-xl shadow-sm text-center border-2 border-dashed border-gray-300 mb-6">
+                                <h2 className="text-xl font-semibold mb-2">{t.startAnalysis}</h2>
+                                <p className="text-gray-500 mb-4">{t.uploadDesc}</p>
+                                <label className="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-lg shadow transition inline-flex items-center gap-2">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
+                                    {t.uploadBtn}
+                                    <input id="fileUploadInput" type="file" accept=".xlsx, .xls" onChange={handleFileUpload} className="hidden" />
+                                </label>
+                            </div>
+                        )}
+
+                        {rawData.length > 0 && (
+                            <div className="space-y-6">
+                                {/* ພາກທີ 1: KPIs ຫຼັກ */}
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                                    <div className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-blue-500">
+                                        <div className="text-gray-500 text-sm font-medium">{t.totalParticipants}</div>
+                                        <div className="text-3xl font-bold text-gray-800">{kpis.total} <span className="text-sm font-normal text-gray-500">{t.times}</span></div>
+                                        <div className="text-xs text-gray-400 mt-1">Pre: {kpis.preCount} | Post: {kpis.postCount}</div>
+                                    </div>
+                                    <div className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-pink-500">
+                                        <div className="text-gray-500 text-sm font-medium">{t.genderRatio}</div>
+                                        <div className="text-3xl font-bold text-gray-800 flex items-baseline gap-2">
+                                            <span className="text-pink-500">{kpis.females}</span>
+                                            <span className="text-lg text-gray-400">/</span>
+                                            <span className="text-blue-500">{kpis.males}</span>
+                                        </div>
+                                        <div className="text-xs text-gray-400 mt-1">{t.genderDesc}</div>
+                                    </div>
+                                    <div className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-yellow-500">
+                                        <div className="text-gray-500 text-sm font-medium">{t.avgPre}</div>
+                                        <div className="text-3xl font-bold text-gray-800">{kpis.preAvg} <span className="text-sm font-normal text-gray-500">/ {maxScore}</span></div>
+                                        <div className="text-xs text-gray-400 mt-1">{t.avgPreSub}</div>
+                                    </div>
+                                    <div className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-green-500">
+                                        <div className="text-gray-500 text-sm font-medium">{t.avgPost}</div>
+                                        <div className="text-3xl font-bold text-gray-800">{kpis.postAvg} <span className="text-sm font-normal text-gray-500">/ {maxScore}</span></div>
+                                        <div className="text-xs text-green-600 font-medium mt-1 flex items-center">
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
+                                            {t.increased} +{(kpis.postAvg - kpis.preAvg).toFixed(2)}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                                    {/* ຕາລາງປຽບທຽບລາຍຄຳຖາມ */}
+                                    <div className="lg:col-span-2 bg-white rounded-xl shadow-sm overflow-hidden flex flex-col">
+                                        <div className="p-4 border-b border-gray-100 bg-gray-50 flex justify-between items-center flex-wrap gap-2">
+                                            <div className="flex items-center gap-3">
+                                                <h3 className="font-semibold text-gray-800">{t.qTableTitle}</h3>
+                                                {isTranslatingQuestions && (
+                                                    <span className="bg-indigo-100 text-indigo-700 text-xs px-2 py-1 rounded flex items-center gap-1">
+                                                        <svg className="animate-spin h-3 w-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                                                        {t.translateLoading}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">Click Header to Sort</span>
+                                        </div>
+                                        <div className="overflow-x-auto custom-scrollbar flex-1">
+                                            <table className="w-full text-left border-collapse min-w-[600px]">
+                                                <thead>
+                                                    <tr className="bg-gray-50 text-gray-600 text-sm select-none">
+                                                        <th className="p-3 border-b border-gray-200 cursor-pointer hover:bg-gray-200 transition" onClick={() => requestSort('key')}>
+                                                            <div className="flex items-center gap-1">{t.code} {sortConfig.key === 'key' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : <span className="text-gray-300">↕</span>}</div>
+                                                        </th>
+                                                        <th className="p-3 border-b border-gray-200 w-1/2 cursor-pointer hover:bg-gray-200 transition" onClick={() => requestSort('text')}>
+                                                            <div className="flex items-center gap-1">{t.qTopic} {sortConfig.key === 'text' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : <span className="text-gray-300">↕</span>}</div>
+                                                        </th>
+                                                        <th className="p-3 border-b border-gray-200 text-center cursor-pointer hover:bg-gray-200 transition" onClick={() => requestSort('prePercent')}>
+                                                            <div className="flex items-center justify-center gap-1">Pre-test (%) {sortConfig.key === 'prePercent' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : <span className="text-gray-300">↕</span>}</div>
+                                                        </th>
+                                                        <th className="p-3 border-b border-gray-200 text-center cursor-pointer hover:bg-gray-200 transition" onClick={() => requestSort('postPercent')}>
+                                                            <div className="flex items-center justify-center gap-1">Post-test (%) {sortConfig.key === 'postPercent' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : <span className="text-gray-300">↕</span>}</div>
+                                                        </th>
+                                                        <th className="p-3 border-b border-gray-200 text-right cursor-pointer hover:bg-gray-200 transition" onClick={() => requestSort('improvement')}>
+                                                            <div className="flex items-center justify-end gap-1">{t.improvement} {sortConfig.key === 'improvement' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : <span className="text-gray-300">↕</span>}</div>
+                                                        </th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {sortedQuestionStats.map((q, idx) => (
+                                                        <tr key={q.key} className="border-b border-gray-100 hover:bg-blue-50 transition">
+                                                            <td className="p-3 text-sm text-gray-500">{q.key.toUpperCase()}</td>
+                                                            <td className="p-3 text-sm text-gray-800 truncate max-w-xs" title={q.text}>{q.text}</td>
+                                                            <td className="p-3 text-sm text-center">
+                                                                <div className="w-full bg-gray-200 rounded-full h-1.5 mb-1"><div className="bg-yellow-400 h-1.5 rounded-full" style={{width: `${q.prePercent}%`}}></div></div>
+                                                                {q.prePercent}%
+                                                            </td>
+                                                            <td className="p-3 text-sm text-center font-medium">
+                                                                <div className="w-full bg-gray-200 rounded-full h-1.5 mb-1"><div className="bg-green-500 h-1.5 rounded-full" style={{width: `${q.postPercent}%`}}></div></div>
+                                                                {q.postPercent}%
+                                                            </td>
+                                                            <td className={`p-3 text-sm text-right font-semibold ${q.improvement > 0 ? 'text-green-600' : 'text-red-500'}`}>
+                                                                {q.improvement > 0 ? '+' : ''}{q.improvement}%
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+
+                                    {/* AI Recommendations Panel */}
+                                    <div className="bg-white rounded-xl shadow-sm flex flex-col border border-purple-100">
+                                        <div className="p-4 border-b border-purple-100 bg-purple-50 flex items-center gap-2 rounded-t-xl">
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-purple-600"><path d="M12 2v20"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                                            <h3 className="font-semibold text-purple-900">{t.aiTitle}</h3>
+                                        </div>
+                                        <div className="p-4 flex-1 flex flex-col">
+                                            <p className="text-sm text-gray-600 mb-3">
+                                                {t.aiDesc} (Bottom {bottomQuestions.length}):
+                                            </p>
+                                            <ul className="space-y-2 mb-4 flex-1">
+                                                {bottomQuestions.map((q, i) => (
+                                                    <li key={i} className="text-xs p-2 bg-red-50 text-red-800 border border-red-100 rounded flex gap-2 items-start">
+                                                        <span className="font-bold">{i+1}.</span>
+                                                        <span className="line-clamp-2" title={q.text}>{q.text}</span>
+                                                        <span className="ml-auto font-bold">{q.postPercent}%</span>
+                                                    </li>
+                                                ))}
+                                            </ul>
+
+                                            {!aiRecommendation && !isAiLoading && (
+                                                <button 
+                                                    onClick={getAIRecommendation}
+                                                    className="w-full bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium py-2 rounded shadow transition flex justify-center items-center gap-2"
+                                                >
+                                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72Z"/><path d="m14 7 3 3"/><path d="M5 6v4"/><path d="M19 14v4"/><path d="M10 2v2"/><path d="M7 8H3"/><path d="M21 16h-4"/><path d="M11 3H9"/></svg>
+                                                    {t.generateAiBtn}
+                                                </button>
+                                            )}
+
+                                            {isAiLoading && (
+                                                <div className="text-center py-4 text-purple-600 text-sm flex flex-col items-center gap-2">
+                                                    <svg className="animate-spin h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                                                    {t.aiLoading}
+                                                </div>
+                                            )}
+
+                                            {aiError && <div className="text-red-500 text-xs mt-2 text-center">{aiError}</div>}
+
+                                            {aiRecommendation && (
+                                                <div className="mt-2 bg-purple-50 p-3 rounded border border-purple-100 h-48 overflow-y-auto custom-scrollbar text-sm text-gray-800 leading-relaxed">
+                                                    {/* Simple markdown parsing for bold text */}
+                                                    {aiRecommendation.split('\n').map((line, i) => {
+                                                        const parts = line.split(/(\*\*.*?\*\*)/g);
+                                                        return (
+                                                            <p key={i} className="mb-2">
+                                                                {parts.map((part, j) => 
+                                                                    part.startsWith('**') && part.endsWith('**') 
+                                                                        ? <strong key={j}>{part.slice(2, -2)}</strong> 
+                                                                        : part
+                                                                )}
+                                                            </p>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* ພາກທີ 3: ປຽບທຽບຕາມ Organization Type */}
+                                <div className="bg-white rounded-xl shadow-sm p-4">
+                                    <h3 className="font-semibold text-gray-800 mb-4 ml-2">{t.orgChartTitle}</h3>
+                                    <div className="h-80 w-full">
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <BarChart
+                                                data={orgStats}
+                                                margin={{ top: 30, right: 30, left: 0, bottom: 5 }}
+                                            >
+                                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
+                                                <XAxis dataKey="name" tick={{fontSize: 12}} />
+                                                <YAxis domain={[0, maxScore + 1]} />
+                                                <Tooltip 
+                                                    contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}}
+                                                />
+                                                <Legend />
+                                                <Bar dataKey="Pre_test" name={t.preTestName} fill="#fbbf24" radius={[4, 4, 0, 0]} label={{ position: 'top', fill: '#4b5563', fontSize: 12, fontWeight: 600 }} />
+                                                <Bar dataKey="Post_test" name={t.postTestName} fill="#22c55e" radius={[4, 4, 0, 0]} label={{ position: 'top', fill: '#4b5563', fontSize: 12, fontWeight: 600 }} />
+                                            </BarChart>
+                                        </ResponsiveContainer>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
