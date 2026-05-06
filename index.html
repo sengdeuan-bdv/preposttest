@@ -248,15 +248,18 @@
                     setTotalScoreKey("Total score");
                 }
 
-                const questionCols = headers.filter(h => /^\d+\./.test(h));
-                
                 const qMap = [];
                 calCols.forEach(cal => {
                     const numMatch = cal.match(/\d+/);
                     if (numMatch) {
                         const num = numMatch[0];
-                        // Find column starting with "num."
-                        const qText = questionCols.find(q => q.startsWith(`${num}.`)) || `Question ${num}`;
+                        // ຊອກຫາຖັນຄຳຖາມທີ່ມີຕົວເລກກົງກັນ (ຮອງຮັບ "11.", "11 ", "Q11", " 11.", ຫຼື "11")
+                        const qText = headers.find(h => {
+                            const cleanH = h.trim();
+                            const regex = new RegExp(`^Q?\\s*${num}(?:[\\.\\)\\s:_-]|$)`, 'i');
+                            return regex.test(cleanH);
+                        }) || `Question ${num}`;
+                        
                         // ບັນທຶກທັງພາສາອັງກິດຕົ້ນສະບັບ ແລະ ກຽມຊ່ອງຫວ່າງໄວ້ສຳລັບພາສາລາວ
                         qMap.push({ key: cal, originalText: qText, translatedText: null });
                     }
