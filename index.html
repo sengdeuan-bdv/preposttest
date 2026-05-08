@@ -61,7 +61,7 @@
         // ວັດຈະນານຸກົມ (Dictionary) ສຳລັບ 2 ພາສາ
         const translations = {
             lo: {
-                appTitleDefault: "Data Literacy: ວິເຄາະຜົນການທົດສອບ",
+                appTitleDefault: "Pre- and Post-Test analysis",
                 exportBtn: "Export Report (.doc)",
                 exportExcelBtn: "ສົ່ງອອກ Excel (.xlsx)",
                 clearBtn: "ລຶບຂໍ້ມູນ (Clear)",
@@ -95,7 +95,7 @@
                 postTestName: "ຫຼັງອົບຮົມ (Post-test)",
                 aiPromptLang: "ເປັນພາສາລາວ (Lao language)",
                 aiSystemInstruction: "ຕອບເປັນພາສາລາວເທົ່ານັ້ນ. ໃຫ້ຄຳແນະນຳທີ່ເປັນປະໂຫຍດ ແລະ ສາມາດນຳໄປປະຕິບັດໄດ້ຈິງ.",
-                reportTitle: "ບົດລາຍງານການປະເມີນຜົນການຝຶກອົບຮົມ Data Literacy",
+                reportTitle: "ບົດລາຍງານການປະເມີນຜົນການຝຶກອົບຮົມ Pre- and Post-Test analysis",
                 repSec1: "1. ຂໍ້ມູນທົ່ວໄປຂອງຜູ້ເຂົ້າຮ່ວມ",
                 repTotal: "ຈຳນວນການທົດສອບທັງໝົດ:",
                 repGender: "ອັດຕາສ່ວນຜູ້ເຂົ້າຮ່ວມ: ຍິງ",
@@ -112,7 +112,7 @@
                 repNoAi: "ຍັງບໍ່ໄດ້ສ້າງຄຳແນະນຳຈາກ AI ຫຼັງການວິເຄາະ. (ກະລຸນາກົດປຸ່ມ 'ສ້າງຄຳແນະນຳ' ໃນ Dashboard ກ່ອນ Export)"
             },
             en: {
-                appTitleDefault: "Data Literacy: Pre/Post Test Analysis",
+                appTitleDefault: "Pre- and Post-Test analysis",
                 exportBtn: "Export Report (.doc)",
                 exportExcelBtn: "Export Excel (.xlsx)",
                 clearBtn: "Clear Data",
@@ -146,7 +146,7 @@
                 postTestName: "Post-test",
                 aiPromptLang: "in English",
                 aiSystemInstruction: "Answer in English only. Provide practical and actionable advice based on the data.",
-                reportTitle: "Data Literacy Training Evaluation Report",
+                reportTitle: "Pre- and Post-Test analysis Evaluation Report",
                 repSec1: "1. General Participant Information",
                 repTotal: "Total records:",
                 repGender: "Gender ratio: Female",
@@ -526,7 +526,7 @@
                 const customPart = customInstruction.trim() ? `\n\nAdditional user instructions to consider for your advice:\n"${customInstruction.trim()}"` : "";
 
                 const prompt = `
-                    As a Data Literacy training expert.
+                    As a Pre- and Post-Test analysis training expert.
                     These are the test questions where participants scored the lowest (bottom ${bottomQuestions.length}) after the training:
                     
                     ${questionTextList}
