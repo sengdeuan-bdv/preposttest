@@ -80,6 +80,10 @@
                 avgPre: "ຄະແນນສະເລ່ຍ (ກ່ອນອົບຮົມ)",
                 avgPreSub: "Pre-test Average Score",
                 avgPost: "ຄະແນນສະເລ່ຍ (ຫຼັງອົບຮົມ)",
+                sumPre: "ຄະແນນລວມ (Pre-test)",
+                sumPost: "ຄະແນນລວມ (Post-test)",
+                femaleShort: "ຍິງ:",
+                maleShort: "ຊາຍ:",
                 increased: "ເພີ່ມຂຶ້ນ",
                 qTableTitle: "ອັດຕາການຕອບຖືກແຕ່ລະຄຳຖາມ (Pre vs Post)",
                 translateLoading: "ກຳລັງແປຄຳຖາມ...",
@@ -134,6 +138,10 @@
                 avgPre: "Average Score (Pre-test)",
                 avgPreSub: "Pre-test Average Score",
                 avgPost: "Average Score (Post-test)",
+                sumPre: "Total Sum (Pre-test)",
+                sumPost: "Total Sum (Post-test)",
+                femaleShort: "F:",
+                maleShort: "M:",
                 increased: "Increased by",
                 qTableTitle: "Correct Response Rate per Question (Pre vs Post)",
                 translateLoading: "Translating questions...",
@@ -450,6 +458,19 @@
                 const males = filteredData.filter(d => String(d['Gender'] || '').toLowerCase() === 'male').length;
                 const females = filteredData.filter(d => String(d['Gender'] || '').toLowerCase() === 'female').length;
 
+                const getSumByGender = (dataArr, gender) => {
+                    const filtered = dataArr.filter(d => String(d['Gender'] || '').toLowerCase() === gender.toLowerCase());
+                    return filtered.reduce((acc, row) => acc + (parseFloat(row[totalScoreKey]) || 0), 0);
+                };
+
+                const preSumTotal = preData.reduce((acc, row) => acc + (parseFloat(row[totalScoreKey]) || 0), 0);
+                const preSumFemale = getSumByGender(preData, 'female');
+                const preSumMale = getSumByGender(preData, 'male');
+                
+                const postSumTotal = postData.reduce((acc, row) => acc + (parseFloat(row[totalScoreKey]) || 0), 0);
+                const postSumFemale = getSumByGender(postData, 'female');
+                const postSumMale = getSumByGender(postData, 'male');
+
                 return {
                     total: filteredData.length,
                     males,
@@ -457,7 +478,13 @@
                     preCount: preData.length,
                     postCount: postData.length,
                     preAvg: getAvg(preData),
-                    postAvg: getAvg(postData)
+                    postAvg: getAvg(postData),
+                    preSumTotal,
+                    preSumFemale,
+                    preSumMale,
+                    postSumTotal,
+                    postSumFemale,
+                    postSumMale
                 };
             }, [filteredData, totalScoreKey]);
 
@@ -641,6 +668,8 @@
                         <ul>
                             <li>${t.repPre} ${kpis.preAvg} / ${maxScore}</li>
                             <li>${t.repPost} ${kpis.postAvg} / ${maxScore}</li>
+                            <li>${t.sumPre}: ${kpis.preSumTotal} (${t.femaleShort} ${kpis.preSumFemale}, ${t.maleShort} ${kpis.preSumMale})</li>
+                            <li>${t.sumPost}: ${kpis.postSumTotal} (${t.femaleShort} ${kpis.postSumFemale}, ${t.maleShort} ${kpis.postSumMale})</li>
                             <li>${t.repImprov} +${(kpis.postAvg - kpis.preAvg).toFixed(2)} ${t.repPoints}</li>
                         </ul>
                         <h3>${t.repSec3}</h3>
@@ -686,6 +715,12 @@
                 wsData.push(["Males", kpis.males]);
                 wsData.push([t.avgPre, kpis.preAvg]);
                 wsData.push([t.avgPost, kpis.postAvg]);
+                wsData.push([t.sumPre, kpis.preSumTotal]);
+                wsData.push([`${t.sumPre} (${t.femaleShort.replace(':', '')})`, kpis.preSumFemale]);
+                wsData.push([`${t.sumPre} (${t.maleShort.replace(':', '')})`, kpis.preSumMale]);
+                wsData.push([t.sumPost, kpis.postSumTotal]);
+                wsData.push([`${t.sumPost} (${t.femaleShort.replace(':', '')})`, kpis.postSumFemale]);
+                wsData.push([`${t.sumPost} (${t.maleShort.replace(':', '')})`, kpis.postSumMale]);
                 wsData.push([t.increased, (kpis.postAvg - kpis.preAvg).toFixed(2)]);
                 
                 // ຍະຫວ່າງ 2 ແຖວ
@@ -866,7 +901,7 @@
                         {rawData.length > 0 && (
                             <div className="space-y-6">
                                 {/* ພາກທີ 1: KPIs ຫຼັກ */}
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                                     <div className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-blue-500">
                                         <div className="text-gray-500 text-sm font-medium">{t.totalParticipants}</div>
                                         <div className="text-3xl font-bold text-gray-800">{kpis.total} <span className="text-sm font-normal text-gray-500">{t.times}</span></div>
@@ -892,6 +927,22 @@
                                         <div className="text-xs text-green-600 font-medium mt-1 flex items-center">
                                             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
                                             {t.increased} +{(kpis.postAvg - kpis.preAvg).toFixed(2)}
+                                        </div>
+                                    </div>
+                                    <div className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-indigo-500">
+                                        <div className="text-gray-500 text-sm font-medium">{t.sumPre}</div>
+                                        <div className="text-3xl font-bold text-gray-800">{kpis.preSumTotal}</div>
+                                        <div className="text-xs text-gray-500 mt-1 flex justify-between items-center bg-gray-50 px-2 py-1 rounded">
+                                            <span>{t.femaleShort} <span className="font-semibold text-pink-500">{kpis.preSumFemale}</span></span>
+                                            <span>{t.maleShort} <span className="font-semibold text-blue-500">{kpis.preSumMale}</span></span>
+                                        </div>
+                                    </div>
+                                    <div className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-teal-500">
+                                        <div className="text-gray-500 text-sm font-medium">{t.sumPost}</div>
+                                        <div className="text-3xl font-bold text-gray-800">{kpis.postSumTotal}</div>
+                                        <div className="text-xs text-gray-500 mt-1 flex justify-between items-center bg-gray-50 px-2 py-1 rounded">
+                                            <span>{t.femaleShort} <span className="font-semibold text-pink-500">{kpis.postSumFemale}</span></span>
+                                            <span>{t.maleShort} <span className="font-semibold text-blue-500">{kpis.postSumMale}</span></span>
                                         </div>
                                     </div>
                                 </div>
