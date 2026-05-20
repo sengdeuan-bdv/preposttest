@@ -86,6 +86,8 @@
                 maleShort: "ຊາຍ:",
                 increased: "ເພີ່ມຂຶ້ນ",
                 qTableTitle: "ອັດຕາການຕອບຖືກແຕ່ລະຄຳຖາມ (Pre vs Post)",
+                viewTable: "ຕາລາງ",
+                viewChart: "ກຣາຟ",
                 translateLoading: "ກຳລັງແປຄຳຖາມ...",
                 code: "ລະຫັດ",
                 qTopic: "ຫົວຂໍ້ຄຳຖາມ",
@@ -144,6 +146,8 @@
                 maleShort: "M:",
                 increased: "Increased by",
                 qTableTitle: "Correct Response Rate per Question (Pre vs Post)",
+                viewTable: "Table",
+                viewChart: "Chart",
                 translateLoading: "Translating questions...",
                 code: "Code",
                 qTopic: "Question Topic",
@@ -197,6 +201,8 @@
             const [lang, setLang] = useState('lo'); // State ສຳລັບພາສາ
             const t = translations[lang];
 
+            const [qViewMode, setQViewMode] = useState('table'); // 'table' or 'chart'
+
             const [rawData, setRawData] = useState([]);
             const [filteredData, setFilteredData] = useState([]);
             const [provinces, setProvinces] = useState([]);
@@ -221,7 +227,12 @@
             const [isAiLoading, setIsAiLoading] = useState(false);
             const [aiError, setAiError] = useState("");
             const [sortConfig, setSortConfig] = useState({ key: 'key', direction: 'asc' });
+            
+            // ປັບປຸງ State ສຳລັບເກັບ Dynamic Keys
             const [totalScoreKey, setTotalScoreKey] = useState("Total score");
+            const [prePostKey, setPrePostKey] = useState("Is this pre or post test?");
+            const [genderKey, setGenderKey] = useState("Gender");
+
             const [isTranslatingQuestions, setIsTranslatingQuestions] = useState(false);
             const isTranslatingRef = useRef(false);
 
@@ -253,13 +264,13 @@
             };
 
             const processExcelData = (data, headers) => {
-                // Find dynamic cal columns and map to questions
-                const calCols = headers.filter(h => /^cal\d+/i.test(h));
+                // Find dynamic cal columns (ຮອງຮັບແບບມີຍະຫວ່າງ ເຊັ່ນ cal 1)
+                const calCols = headers.filter(h => /^cal\s*\d+/i.test(h));
                 
                 // ຈັດລຽງຄຳຖາມ (cal1, cal2, cal3...) ແຕ່ໜ້ອຍຫາໃຫຍ່
                 calCols.sort((a, b) => {
-                    const numA = parseInt(a.match(/\d+/)[0]);
-                    const numB = parseInt(b.match(/\d+/)[0]);
+                    const numA = parseInt(a.match(/\d+/)?.[0] || 0);
+                    const numB = parseInt(b.match(/\d+/)?.[0] || 0);
                     return numA - numB;
                 });
 
@@ -272,11 +283,23 @@
                     }
                 });
 
+                let tScoreKey = "Total score";
                 if (maxCalIndex !== -1 && maxCalIndex + 1 < headers.length) {
-                    setTotalScoreKey(headers[maxCalIndex + 1]);
+                    tScoreKey = headers[maxCalIndex + 1];
                 } else {
-                    setTotalScoreKey("Total score");
+                    // Fallback: ຖ້າຫາບໍ່ເຫັນ ໃຫ້ຊອກຫາຄຳວ່າ total score (ແບບບໍ່ສົນໃຈຍະຫວ່າງ/ໂຕນ້ອຍໂຕໃຫຍ່)
+                    const fallback = headers.find(h => h.toLowerCase().includes('total') && h.toLowerCase().includes('score'));
+                    if (fallback) tScoreKey = fallback;
                 }
+                setTotalScoreKey(tScoreKey);
+
+                // ຊອກຫາຖັນ Pre/Post Test
+                const ppKey = headers.find(h => h.toLowerCase().includes('pre') && h.toLowerCase().includes('post')) || 'Is this pre or post test?';
+                setPrePostKey(ppKey);
+
+                // ຊອກຫາຖັນ Gender
+                const gKey = headers.find(h => h.toLowerCase().trim() === 'gender' || h.toLowerCase().trim() === 'ເພດ') || 'Gender';
+                setGenderKey(gKey);
 
                 const qMap = [];
                 calCols.forEach(cal => {
@@ -350,7 +373,10 @@
                 setCustomInstruction("");
                 setAiError("");
                 setSortConfig({ key: 'key', direction: 'asc' });
+                setQViewMode('table');
                 setTotalScoreKey("Total score");
+                setPrePostKey("Is this pre or post test?");
+                setGenderKey("Gender");
                 
                 // ຣີເຊັດ Title
                 setDashboardTitle(translations[lang].appTitleDefault);
@@ -446,28 +472,40 @@
 
             // --- 2. Calculate KPIs ---
             const kpis = useMemo(() => {
-                const preData = filteredData.filter(d => String(d['Is this pre or post test?'] || '').toLowerCase().includes('pre'));
-                const postData = filteredData.filter(d => String(d['Is this pre or post test?'] || '').toLowerCase().includes('post'));
+                const preData = filteredData.filter(d => String(d[prePostKey] || '').toLowerCase().includes('pre'));
+                const postData = filteredData.filter(d => String(d[prePostKey] || '').toLowerCase().includes('post'));
                 
+                // Function ແປງຄະແນນໃຫ້ເປັນຕົວເລກ (ປ້ອງກັນ string ທີ່ມີ comma ຫຼື ຍະຫວ່າງ)
+                const parseScore = (val) => parseFloat(String(val).replace(/,/g, '')) || 0;
+                const round2 = (num) => Math.round(num * 100) / 100;
+
                 const getAvg = (dataArr) => {
                     if (dataArr.length === 0) return "0.00";
-                    const sum = dataArr.reduce((acc, row) => acc + (parseFloat(row[totalScoreKey]) || 0), 0);
+                    const sum = dataArr.reduce((acc, row) => acc + parseScore(row[totalScoreKey]), 0);
                     return (sum / dataArr.length).toFixed(2);
                 };
 
-                const males = filteredData.filter(d => String(d['Gender'] || '').toLowerCase() === 'male').length;
-                const females = filteredData.filter(d => String(d['Gender'] || '').toLowerCase() === 'female').length;
+                const isMale = (g) => g === 'male' || g === 'm' || g === 'ຊາຍ';
+                const isFemale = (g) => g === 'female' || g === 'f' || g === 'ຍິງ';
 
-                const getSumByGender = (dataArr, gender) => {
-                    const filtered = dataArr.filter(d => String(d['Gender'] || '').toLowerCase() === gender.toLowerCase());
-                    return filtered.reduce((acc, row) => acc + (parseFloat(row[totalScoreKey]) || 0), 0);
+                const males = filteredData.filter(d => isMale(String(d[genderKey] || '').toLowerCase())).length;
+                const females = filteredData.filter(d => isFemale(String(d[genderKey] || '').toLowerCase())).length;
+
+                const getSumByGender = (dataArr, genderTarget) => {
+                    const filtered = dataArr.filter(d => {
+                        const g = String(d[genderKey] || '').toLowerCase();
+                        if (genderTarget === 'female') return isFemale(g);
+                        if (genderTarget === 'male') return isMale(g);
+                        return false;
+                    });
+                    return filtered.reduce((acc, row) => acc + parseScore(row[totalScoreKey]), 0);
                 };
 
-                const preSumTotal = preData.reduce((acc, row) => acc + (parseFloat(row[totalScoreKey]) || 0), 0);
+                const preSumTotal = preData.reduce((acc, row) => acc + parseScore(row[totalScoreKey]), 0);
                 const preSumFemale = getSumByGender(preData, 'female');
                 const preSumMale = getSumByGender(preData, 'male');
                 
-                const postSumTotal = postData.reduce((acc, row) => acc + (parseFloat(row[totalScoreKey]) || 0), 0);
+                const postSumTotal = postData.reduce((acc, row) => acc + parseScore(row[totalScoreKey]), 0);
                 const postSumFemale = getSumByGender(postData, 'female');
                 const postSumMale = getSumByGender(postData, 'male');
 
@@ -479,21 +517,21 @@
                     postCount: postData.length,
                     preAvg: getAvg(preData),
                     postAvg: getAvg(postData),
-                    preSumTotal,
-                    preSumFemale,
-                    preSumMale,
-                    postSumTotal,
-                    postSumFemale,
-                    postSumMale
+                    preSumTotal: round2(preSumTotal),
+                    preSumFemale: round2(preSumFemale),
+                    preSumMale: round2(preSumMale),
+                    postSumTotal: round2(postSumTotal),
+                    postSumFemale: round2(postSumFemale),
+                    postSumMale: round2(postSumMale)
                 };
-            }, [filteredData, totalScoreKey]);
+            }, [filteredData, totalScoreKey, prePostKey, genderKey]);
 
             // --- 3. Question Analysis (Table Data) ---
             const questionStats = useMemo(() => {
                 if (questionsMap.length === 0 || filteredData.length === 0) return [];
 
-                const preData = filteredData.filter(d => String(d['Is this pre or post test?'] || '').toLowerCase().includes('pre'));
-                const postData = filteredData.filter(d => String(d['Is this pre or post test?'] || '').toLowerCase().includes('post'));
+                const preData = filteredData.filter(d => String(d[prePostKey] || '').toLowerCase().includes('pre'));
+                const postData = filteredData.filter(d => String(d[prePostKey] || '').toLowerCase().includes('post'));
 
                 const calcPercent = (dataArr, calKey) => {
                     if (dataArr.length === 0) return 0;
@@ -518,7 +556,7 @@
                 });
 
                 return stats;
-            }, [filteredData, questionsMap, lang]);
+            }, [filteredData, questionsMap, lang, prePostKey]);
 
             // Get bottom 3-5 questions
             const bottomQuestions = useMemo(() => {
@@ -564,13 +602,41 @@
                 setSortConfig({ key, direction });
             };
 
+            // Custom Tooltip ສຳລັບກຣາຟຄຳຖາມ
+            const QuestionTooltip = ({ active, payload }) => {
+                if (active && payload && payload.length) {
+                    const data = payload[0].payload;
+                    return (
+                        <div className="bg-white p-3 border border-gray-200 rounded shadow-md text-sm max-w-[250px]">
+                            <p className="font-bold text-gray-800 mb-1">{String(data.key).toUpperCase()}</p>
+                            <p className="text-gray-600 mb-3 text-xs border-b pb-2">{data.text}</p>
+                            <p className="text-yellow-600 font-medium">Pre-test: {data.prePercent}%</p>
+                            <p className="text-green-600 font-medium">Post-test: {data.postPercent}%</p>
+                            <p className={`font-bold mt-1 ${data.improvement > 0 ? 'text-green-600' : 'text-red-500'}`}>
+                                {t.improvement}: {data.improvement > 0 ? '+' : ''}{data.improvement}%
+                            </p>
+                        </div>
+                    );
+                }
+                return null;
+            };
+
             // --- 4. Organization Analysis ---
             const orgStats = useMemo(() => {
+                if (filteredData.length === 0) return [];
+                
+                const sampleRow = filteredData[0];
+                const keys = Object.keys(sampleRow);
+                const oKey = keys.find(k => k.toLowerCase().includes('organization') || k.toLowerCase().includes('ອົງການ')) || 'Organization type:';
+
+                const parseScore = (val) => parseFloat(String(val).replace(/,/g, '')) || 0;
+                const round2 = (num) => Math.round(num * 100) / 100;
+
                 const orgs = {};
                 filteredData.forEach(row => {
-                    const org = row['Organization type:'] || 'Unknown';
-                    const isPre = String(row['Is this pre or post test?'] || '').toLowerCase().includes('pre');
-                    const score = parseFloat(row[totalScoreKey]) || 0;
+                    const org = row[oKey] || 'Unknown';
+                    const isPre = String(row[prePostKey] || '').toLowerCase().includes('pre');
+                    const score = parseScore(row[totalScoreKey]);
 
                     if (!orgs[org]) orgs[org] = { org, preSum: 0, preCount: 0, postSum: 0, postCount: 0 };
                     
@@ -585,10 +651,10 @@
 
                 return Object.values(orgs).map(o => ({
                     name: o.org,
-                    Pre_test: o.preCount ? parseFloat((o.preSum / o.preCount).toFixed(2)) : 0,
-                    Post_test: o.postCount ? parseFloat((o.postSum / o.postCount).toFixed(2)) : 0,
+                    Pre_test: o.preCount ? round2(o.preSum / o.preCount) : 0,
+                    Post_test: o.postCount ? round2(o.postSum / o.postCount) : 0,
                 })).filter(o => o.Pre_test > 0 || o.Post_test > 0);
-            }, [filteredData, totalScoreKey]);
+            }, [filteredData, totalScoreKey, prePostKey]);
 
             // --- 5. Ask Gemini ---
             const getAIRecommendation = async () => {
@@ -960,50 +1026,86 @@
                                                     </span>
                                                 )}
                                             </div>
-                                            <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">Click Header to Sort</span>
+                                            <div className="flex items-center gap-3">
+                                                {qViewMode === 'table' && <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">Click Header to Sort</span>}
+                                                <div className="flex bg-gray-200 rounded p-0.5">
+                                                    <button 
+                                                        onClick={() => setQViewMode('table')} 
+                                                        className={`px-3 py-1 text-xs rounded transition ${qViewMode === 'table' ? 'bg-white text-gray-800 font-bold shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                                                    >
+                                                        {t.viewTable}
+                                                    </button>
+                                                    <button 
+                                                        onClick={() => setQViewMode('chart')} 
+                                                        className={`px-3 py-1 text-xs rounded transition ${qViewMode === 'chart' ? 'bg-white text-gray-800 font-bold shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                                                    >
+                                                        {t.viewChart}
+                                                    </button>
+                                                </div>
+                                            </div>
                                         </div>
-                                        <div className="overflow-x-auto custom-scrollbar flex-1">
-                                            <table className="w-full text-left border-collapse min-w-[600px]">
-                                                <thead>
-                                                    <tr className="bg-gray-50 text-gray-600 text-sm select-none">
-                                                        <th className="p-3 border-b border-gray-200 cursor-pointer hover:bg-gray-200 transition" onClick={() => requestSort('key')}>
-                                                            <div className="flex items-center gap-1">{t.code} {sortConfig.key === 'key' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : <span className="text-gray-300">↕</span>}</div>
-                                                        </th>
-                                                        <th className="p-3 border-b border-gray-200 w-1/2 cursor-pointer hover:bg-gray-200 transition" onClick={() => requestSort('text')}>
-                                                            <div className="flex items-center gap-1">{t.qTopic} {sortConfig.key === 'text' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : <span className="text-gray-300">↕</span>}</div>
-                                                        </th>
-                                                        <th className="p-3 border-b border-gray-200 text-center cursor-pointer hover:bg-gray-200 transition" onClick={() => requestSort('prePercent')}>
-                                                            <div className="flex items-center justify-center gap-1">Pre-test (%) {sortConfig.key === 'prePercent' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : <span className="text-gray-300">↕</span>}</div>
-                                                        </th>
-                                                        <th className="p-3 border-b border-gray-200 text-center cursor-pointer hover:bg-gray-200 transition" onClick={() => requestSort('postPercent')}>
-                                                            <div className="flex items-center justify-center gap-1">Post-test (%) {sortConfig.key === 'postPercent' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : <span className="text-gray-300">↕</span>}</div>
-                                                        </th>
-                                                        <th className="p-3 border-b border-gray-200 text-right cursor-pointer hover:bg-gray-200 transition" onClick={() => requestSort('improvement')}>
-                                                            <div className="flex items-center justify-end gap-1">{t.improvement} {sortConfig.key === 'improvement' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : <span className="text-gray-300">↕</span>}</div>
-                                                        </th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                    {sortedQuestionStats.map((q, idx) => (
-                                                        <tr key={q.key} className="border-b border-gray-100 hover:bg-blue-50 transition">
-                                                            <td className="p-3 text-sm text-gray-500">{q.key.toUpperCase()}</td>
-                                                            <td className="p-3 text-sm text-gray-800 truncate max-w-xs" title={q.text}>{q.text}</td>
-                                                            <td className="p-3 text-sm text-center">
-                                                                <div className="w-full bg-gray-200 rounded-full h-1.5 mb-1"><div className="bg-yellow-400 h-1.5 rounded-full" style={{width: `${q.prePercent}%`}}></div></div>
-                                                                {q.prePercent}%
-                                                            </td>
-                                                            <td className="p-3 text-sm text-center font-medium">
-                                                                <div className="w-full bg-gray-200 rounded-full h-1.5 mb-1"><div className="bg-green-500 h-1.5 rounded-full" style={{width: `${q.postPercent}%`}}></div></div>
-                                                                {q.postPercent}%
-                                                            </td>
-                                                            <td className={`p-3 text-sm text-right font-semibold ${q.improvement > 0 ? 'text-green-600' : 'text-red-500'}`}>
-                                                                {q.improvement > 0 ? '+' : ''}{q.improvement}%
-                                                            </td>
+                                        
+                                        {qViewMode === 'table' ? (
+                                            <div className="overflow-x-auto custom-scrollbar flex-1">
+                                                <table className="w-full text-left border-collapse min-w-[600px]">
+                                                    <thead>
+                                                        <tr className="bg-gray-50 text-gray-600 text-sm select-none">
+                                                            <th className="p-3 border-b border-gray-200 cursor-pointer hover:bg-gray-200 transition" onClick={() => requestSort('key')}>
+                                                                <div className="flex items-center gap-1">{t.code} {sortConfig.key === 'key' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : <span className="text-gray-300">↕</span>}</div>
+                                                            </th>
+                                                            <th className="p-3 border-b border-gray-200 w-1/2 cursor-pointer hover:bg-gray-200 transition" onClick={() => requestSort('text')}>
+                                                                <div className="flex items-center gap-1">{t.qTopic} {sortConfig.key === 'text' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : <span className="text-gray-300">↕</span>}</div>
+                                                            </th>
+                                                            <th className="p-3 border-b border-gray-200 text-center cursor-pointer hover:bg-gray-200 transition" onClick={() => requestSort('prePercent')}>
+                                                                <div className="flex items-center justify-center gap-1">Pre-test (%) {sortConfig.key === 'prePercent' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : <span className="text-gray-300">↕</span>}</div>
+                                                            </th>
+                                                            <th className="p-3 border-b border-gray-200 text-center cursor-pointer hover:bg-gray-200 transition" onClick={() => requestSort('postPercent')}>
+                                                                <div className="flex items-center justify-center gap-1">Post-test (%) {sortConfig.key === 'postPercent' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : <span className="text-gray-300">↕</span>}</div>
+                                                            </th>
+                                                            <th className="p-3 border-b border-gray-200 text-right cursor-pointer hover:bg-gray-200 transition" onClick={() => requestSort('improvement')}>
+                                                                <div className="flex items-center justify-end gap-1">{t.improvement} {sortConfig.key === 'improvement' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : <span className="text-gray-300">↕</span>}</div>
+                                                            </th>
                                                         </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
-                                        </div>
+                                                    </thead>
+                                                    <tbody>
+                                                        {sortedQuestionStats.map((q, idx) => (
+                                                            <tr key={q.key} className="border-b border-gray-100 hover:bg-blue-50 transition">
+                                                                <td className="p-3 text-sm text-gray-500">{q.key.toUpperCase()}</td>
+                                                                <td className="p-3 text-sm text-gray-800 truncate max-w-xs" title={q.text}>{q.text}</td>
+                                                                <td className="p-3 text-sm text-center">
+                                                                    <div className="w-full bg-gray-200 rounded-full h-1.5 mb-1"><div className="bg-yellow-400 h-1.5 rounded-full" style={{width: `${q.prePercent}%`}}></div></div>
+                                                                    {q.prePercent}%
+                                                                </td>
+                                                                <td className="p-3 text-sm text-center font-medium">
+                                                                    <div className="w-full bg-gray-200 rounded-full h-1.5 mb-1"><div className="bg-green-500 h-1.5 rounded-full" style={{width: `${q.postPercent}%`}}></div></div>
+                                                                    {q.postPercent}%
+                                                                </td>
+                                                                <td className={`p-3 text-sm text-right font-semibold ${q.improvement > 0 ? 'text-green-600' : 'text-red-500'}`}>
+                                                                    {q.improvement > 0 ? '+' : ''}{q.improvement}%
+                                                                </td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        ) : (
+                                            <div className="h-96 w-full p-4 flex-1">
+                                                <ResponsiveContainer width="100%" height="100%">
+                                                    <BarChart
+                                                        data={sortedQuestionStats}
+                                                        margin={{ top: 20, right: 10, left: -20, bottom: 5 }}
+                                                    >
+                                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
+                                                        <XAxis dataKey="key" tickFormatter={(v) => String(v).toUpperCase()} tick={{fontSize: 12}} />
+                                                        <YAxis domain={[0, 100]} tickFormatter={(v) => `${v}%`} tick={{fontSize: 12}} />
+                                                        <Tooltip content={<QuestionTooltip />} cursor={{fill: '#f3f4f6'}} />
+                                                        <Legend />
+                                                        <Bar dataKey="prePercent" name={t.preTestName} fill="#fbbf24" radius={[4, 4, 0, 0]} />
+                                                        <Bar dataKey="postPercent" name={t.postTestName} fill="#22c55e" radius={[4, 4, 0, 0]} />
+                                                    </BarChart>
+                                                </ResponsiveContainer>
+                                            </div>
+                                        )}
                                     </div>
 
                                     {/* AI Recommendations Panel */}
