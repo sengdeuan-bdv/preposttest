@@ -182,7 +182,24 @@
             }
         };
 
-        // Helper function for API calls with Exponential Backoff
+        // Helpers ທີ່ຊ່ວຍໃນການຄົ້ນຫາຂໍ້ມູນແບບຍືດຫຍຸ່ນ (Dynamic Search)
+        const isPreTest = (val) => {
+            const str = String(val || '').toLowerCase().trim();
+            return str.includes('pre') || str.includes('ກ່ອນ') || str === '1';
+        };
+        const isPostTest = (val) => {
+            const str = String(val || '').toLowerCase().trim();
+            return str.includes('post') || str.includes('ຫຼັງ') || str === '2';
+        };
+        const isMale = (g) => {
+            const str = String(g || '').toLowerCase().trim();
+            return str === 'male' || str === 'm' || str.includes('ຊາຍ');
+        };
+        const isFemale = (g) => {
+            const str = String(g || '').toLowerCase().trim();
+            return str === 'female' || str === 'f' || str.includes('ຍິງ');
+        };
+
         const fetchWithRetry = async (url, options, retries = 5) => {
             const delays = [1000, 2000, 4000, 8000, 16000];
             for (let i = 0; i < retries; i++) {
@@ -206,14 +223,11 @@
             const [rawData, setRawData] = useState([]);
             const [filteredData, setFilteredData] = useState([]);
             const [provinces, setProvinces] = useState([]);
-            
-            // ປ່ຽນການເກັບຂໍ້ມູນແຂວງມາເປັນແບບ Array ເພື່ອຮອງຮັບ Multi-select
             const [selectedProvinces, setSelectedProvinces] = useState([]);
             const [isProvOpen, setIsProvOpen] = useState(false);
             
             const [provinceKey, setProvinceKey] = useState("province");
             
-            // New Date Filter States
             const [monthYears, setMonthYears] = useState([]);
             const [selectedMonthYear, setSelectedMonthYear] = useState("All");
 
@@ -228,7 +242,6 @@
             const [aiError, setAiError] = useState("");
             const [sortConfig, setSortConfig] = useState({ key: 'key', direction: 'asc' });
             
-            // ປັບປຸງ State ສຳລັບເກັບ Dynamic Keys
             const [totalScoreKey, setTotalScoreKey] = useState("Total score");
             const [prePostKey, setPrePostKey] = useState("Is this pre or post test?");
             const [genderKey, setGenderKey] = useState("Gender");
@@ -236,11 +249,9 @@
             const [isTranslatingQuestions, setIsTranslatingQuestions] = useState(false);
             const isTranslatingRef = useRef(false);
 
-            // --- 1. File Upload & Data Processing ---
             const handleFileUpload = (event) => {
                 const file = event.target.files[0];
                 if (file) {
-                    // ປ່ຽນຊື່ Title ຕາມຊື່ໄຟລ໌
                     const fileNameWithoutExt = file.name.replace(/\.[^/.]+$/, "");
                     const newTitle = `${fileNameWithoutExt} Pre/post test`;
                     setDashboardTitle(newTitle);
@@ -252,7 +263,6 @@
                         const workbook = window.XLSX.read(data, { type: 'array' });
                         const firstSheetName = workbook.SheetNames[0];
                         const worksheet = workbook.Sheets[firstSheetName];
-                        // Convert to JSON with raw: false to ensure dates are strings
                         const json = window.XLSX.utils.sheet_to_json(worksheet, { defval: "", raw: false });
                         if (json.length > 0) {
                             const headers = Object.keys(json[0]);
@@ -264,56 +274,77 @@
             };
 
             const processExcelData = (data, headers) => {
-                // Find dynamic cal columns (ຮອງຮັບແບບມີຍະຫວ່າງ ເຊັ່ນ cal 1)
-                const calCols = headers.filter(h => /^cal\s*\d+/i.test(h));
-                
-                // ຈັດລຽງຄຳຖາມ (cal1, cal2, cal3...) ແຕ່ໜ້ອຍຫາໃຫຍ່
+                const calCols = headers.filter(h => /^cal[_\s-]*\d+/i.test(h));
                 calCols.sort((a, b) => {
                     const numA = parseInt(a.match(/\d+/)?.[0] || 0);
                     const numB = parseInt(b.match(/\d+/)?.[0] || 0);
                     return numA - numB;
                 });
 
-                // ຊອກຫາ Column ທີ່ຢູ່ຖັດຈາກ cal ໂຕສຸດທ້າຍ ເພື່ອໃຊ້ເປັນ ຄະແນນລວມ
+                // 1. ຄົ້ນຫາຖັນ Pre/Post Test ແບບຍືດຫຍຸ່ນທີ່ສຸດ
+                let ppKey = headers.find(h => {
+                    const low = h.toLowerCase();
+                    return (low.includes('pre') && low.includes('post')) || low.includes('ກ່ອນ') || low.includes('ຫຼັງ') || low === 'is this pre or post test?';
+                });
+                // ຖ້າຫາຈາກ Header ບໍ່ເຫັນລອງຫາຈາກຂໍ້ມູນ 15 ແຖວທຳອິດ
+                if (!ppKey || !data.some(d => isPreTest(d[ppKey]) || isPostTest(d[ppKey]))) {
+                    const sample = data.slice(0, 15);
+                    for (let h of headers) {
+                        if (sample.some(row => isPreTest(row[h]) || isPostTest(row[h]))) {
+                            ppKey = h; break;
+                        }
+                    }
+                }
+                setPrePostKey(ppKey || 'Is this pre or post test?');
+
+                // 2. ຄົ້ນຫາຖັນ Gender
+                let gKey = headers.find(h => h.toLowerCase().includes('gender') || h.toLowerCase().includes('ເພດ'));
+                if (!gKey || !data.some(d => isMale(d[gKey]) || isFemale(d[gKey]))) {
+                    const sample = data.slice(0, 15);
+                    for(let h of headers) {
+                        if (sample.some(row => isMale(row[h]) || isFemale(row[h]))) {
+                            gKey = h; break;
+                        }
+                    }
+                }
+                setGenderKey(gKey || 'Gender');
+
+                // 3. ຄົ້ນຫາຖັນ ຄະແນນລວມ (Total Score)
                 let maxCalIndex = -1;
                 calCols.forEach(cal => {
                     const idx = headers.indexOf(cal);
-                    if (idx > maxCalIndex) {
-                        maxCalIndex = idx;
-                    }
+                    if (idx > maxCalIndex) maxCalIndex = idx;
                 });
 
-                let tScoreKey = "Total score";
-                if (maxCalIndex !== -1 && maxCalIndex + 1 < headers.length) {
-                    tScoreKey = headers[maxCalIndex + 1];
-                } else {
-                    // Fallback: ຖ້າຫາບໍ່ເຫັນ ໃຫ້ຊອກຫາຄຳວ່າ total score (ແບບບໍ່ສົນໃຈຍະຫວ່າງ/ໂຕນ້ອຍໂຕໃຫຍ່)
-                    const fallback = headers.find(h => h.toLowerCase().includes('total') && h.toLowerCase().includes('score'));
-                    if (fallback) tScoreKey = fallback;
+                let tScoreKey = null;
+                if (maxCalIndex !== -1) {
+                    // ຊອກຫາຖັນຖັດໄປທີ່ມີຂໍ້ມູນ (ຂ້າມຖັນວ່າງ __EMPTY ທີ່ SheetJS ສ້າງຂຶ້ນ)
+                    for (let i = maxCalIndex + 1; i < headers.length; i++) {
+                        if (!headers[i].startsWith('__EMPTY')) {
+                            tScoreKey = headers[i];
+                            break;
+                        }
+                    }
+                }
+                // Fallback ຖ້າຫາບໍ່ເຫັນ
+                if (!tScoreKey) {
+                    tScoreKey = headers.find(h => {
+                        const low = h.toLowerCase().replace(/\s+/g, '');
+                        return low.includes('totalscore') || low.includes('ຄະແນນລວມ') || low.includes('total');
+                    }) || "Total score";
                 }
                 setTotalScoreKey(tScoreKey);
-
-                // ຊອກຫາຖັນ Pre/Post Test
-                const ppKey = headers.find(h => h.toLowerCase().includes('pre') && h.toLowerCase().includes('post')) || 'Is this pre or post test?';
-                setPrePostKey(ppKey);
-
-                // ຊອກຫາຖັນ Gender
-                const gKey = headers.find(h => h.toLowerCase().trim() === 'gender' || h.toLowerCase().trim() === 'ເພດ') || 'Gender';
-                setGenderKey(gKey);
 
                 const qMap = [];
                 calCols.forEach(cal => {
                     const numMatch = cal.match(/\d+/);
                     if (numMatch) {
                         const num = numMatch[0];
-                        // ຊອກຫາຖັນຄຳຖາມທີ່ມີຕົວເລກກົງກັນ (ຮອງຮັບ "11.", "11 ", "Q11", " 11.", ຫຼື "11")
                         const qText = headers.find(h => {
                             const cleanH = h.trim();
                             const regex = new RegExp(`^Q?\\s*${num}(?:[\\.\\)\\s:_-]|$)`, 'i');
                             return regex.test(cleanH);
                         }) || `Question ${num}`;
-                        
-                        // ບັນທຶກທັງພາສາອັງກິດຕົ້ນສະບັບ ແລະ ກຽມຊ່ອງຫວ່າງໄວ້ສຳລັບພາສາລາວ
                         qMap.push({ key: cal, originalText: qText, translatedText: null });
                     }
                 });
@@ -321,14 +352,11 @@
                 setQuestionsMap(qMap);
                 setMaxScore(calCols.length);
 
-                // ຊອກຫາຖັນ province ທຳອິດນັບຈາກຊ້າຍໄປຂວາ
                 const pKey = headers.find(h => h.toLowerCase().trim() === 'province') || 'province';
                 setProvinceKey(pKey);
 
-                // ຊອກຫາຖັນ Date ໂດຍເອົາສະເພາະ "Date:" ຕາມທີ່ກຳນົດ
                 const dKey = headers.find(h => h.trim() === 'Date:');
 
-                // ເພີ່ມຊ່ອງ _monthYear ເຂົ້າໃນທຸກແຖວ
                 const enrichedData = data.map(row => {
                     let my = "";
                     if (dKey && row[dKey]) {
@@ -338,7 +366,6 @@
                             const m = String(d.getMonth() + 1).padStart(2, '0');
                             my = `${m}/${d.getFullYear()}`;
                         } else {
-                            // ກໍລະນີອ່ານມາເປັນ String ແລ້ວແປງ Date() ບໍ່ໄດ້ ໃຫ້ລອງໃຊ້ Regex ດຶງ YYYY-MM
                             const match = String(val).match(/(\d{4})-(\d{2})/);
                             if (match) my = `${match[2]}/${match[1]}`;
                         }
@@ -346,11 +373,9 @@
                     return { ...row, _monthYear: my || "Unknown" };
                 });
 
-                // Extract unique provinces ໂດຍໃຊ້ pKey
                 const uniqueProvinces = [...new Set(enrichedData.map(row => row[pKey]).filter(Boolean))];
                 setProvinces(uniqueProvinces.sort());
 
-                // Extract unique Month-Years
                 const uniqueMonthYears = [...new Set(enrichedData.map(row => row._monthYear).filter(x => x !== "Unknown" && x !== ""))];
                 setMonthYears(uniqueMonthYears.sort());
 
@@ -358,7 +383,6 @@
                 setFilteredData(enrichedData);
             };
 
-            // --- Function Clear Data ---
             const clearData = () => {
                 setRawData([]);
                 setFilteredData([]);
@@ -378,19 +402,15 @@
                 setPrePostKey("Is this pre or post test?");
                 setGenderKey("Gender");
                 
-                // ຣີເຊັດ Title
                 setDashboardTitle(translations[lang].appTitleDefault);
                 document.title = translations[lang].appTitleDefault;
                 
-                // ລ້າງຄ່າໃນ Input File ເພື່ອໃຫ້ສາມາດອັບໂຫຼດໄຟລ໌ເດີມຊ້ຳໄດ້
                 const fileInput = document.getElementById("fileUploadInput");
                 if (fileInput) fileInput.value = "";
             };
 
-            // --- Function Translate Questions Auto ---
             const translateQuestionsAuto = async () => {
                 if (questionsMap.length === 0) return;
-                
                 isTranslatingRef.current = true;
                 setIsTranslatingQuestions(true);
                 
@@ -441,10 +461,8 @@
                 }
             };
 
-            // --- Effect: Auto-translate when language is set to 'lo' ---
             useEffect(() => {
                 if (lang === 'lo' && questionsMap.length > 0) {
-                    // ກວດສອບວ່າຍັງບໍ່ທັນມີຄຳແປ ແລະ ບໍ່ໄດ້ກຳລັງແປຢູ່
                     if (questionsMap[0].translatedText === null && !isTranslatingRef.current) {
                         translateQuestionsAuto();
                     }
@@ -452,30 +470,22 @@
             }, [lang, questionsMap]);
 
 
-            // --- Filter Effect (Province & Date) ---
             useEffect(() => {
                 let result = rawData;
-                
-                // ຖ້າມີການເລືອກແຂວງ ຫຼາຍກວ່າ 0 ໃຫ້ Filter ຕາມລາຍຊື່ທີ່ເລືອກ
                 if (selectedProvinces.length > 0) {
                     result = result.filter(row => selectedProvinces.includes(row[provinceKey]));
                 }
-                
                 if (selectedMonthYear !== "All") {
                     result = result.filter(row => row._monthYear === selectedMonthYear);
                 }
-                
                 setFilteredData(result);
-                // Reset AI when filter or language changes
                 setAiRecommendation("");
             }, [selectedProvinces, selectedMonthYear, rawData, provinceKey, lang]);
 
-            // --- 2. Calculate KPIs ---
             const kpis = useMemo(() => {
-                const preData = filteredData.filter(d => String(d[prePostKey] || '').toLowerCase().includes('pre'));
-                const postData = filteredData.filter(d => String(d[prePostKey] || '').toLowerCase().includes('post'));
+                const preData = filteredData.filter(d => isPreTest(d[prePostKey]));
+                const postData = filteredData.filter(d => isPostTest(d[prePostKey]));
                 
-                // Function ແປງຄະແນນໃຫ້ເປັນຕົວເລກ (ປ້ອງກັນ string ທີ່ມີ comma ຫຼື ຍະຫວ່າງ)
                 const parseScore = (val) => parseFloat(String(val).replace(/,/g, '')) || 0;
                 const round2 = (num) => Math.round(num * 100) / 100;
 
@@ -485,17 +495,13 @@
                     return (sum / dataArr.length).toFixed(2);
                 };
 
-                const isMale = (g) => g === 'male' || g === 'm' || g === 'ຊາຍ';
-                const isFemale = (g) => g === 'female' || g === 'f' || g === 'ຍິງ';
-
-                const males = filteredData.filter(d => isMale(String(d[genderKey] || '').toLowerCase())).length;
-                const females = filteredData.filter(d => isFemale(String(d[genderKey] || '').toLowerCase())).length;
+                const males = filteredData.filter(d => isMale(d[genderKey])).length;
+                const females = filteredData.filter(d => isFemale(d[genderKey])).length;
 
                 const getSumByGender = (dataArr, genderTarget) => {
                     const filtered = dataArr.filter(d => {
-                        const g = String(d[genderKey] || '').toLowerCase();
-                        if (genderTarget === 'female') return isFemale(g);
-                        if (genderTarget === 'male') return isMale(g);
+                        if (genderTarget === 'female') return isFemale(d[genderKey]);
+                        if (genderTarget === 'male') return isMale(d[genderKey]);
                         return false;
                     });
                     return filtered.reduce((acc, row) => acc + parseScore(row[totalScoreKey]), 0);
@@ -526,24 +532,21 @@
                 };
             }, [filteredData, totalScoreKey, prePostKey, genderKey]);
 
-            // --- 3. Question Analysis (Table Data) ---
             const questionStats = useMemo(() => {
                 if (questionsMap.length === 0 || filteredData.length === 0) return [];
 
-                const preData = filteredData.filter(d => String(d[prePostKey] || '').toLowerCase().includes('pre'));
-                const postData = filteredData.filter(d => String(d[prePostKey] || '').toLowerCase().includes('post'));
+                const preData = filteredData.filter(d => isPreTest(d[prePostKey]));
+                const postData = filteredData.filter(d => isPostTest(d[prePostKey]));
 
                 const calcPercent = (dataArr, calKey) => {
                     if (dataArr.length === 0) return 0;
-                    const sum = dataArr.reduce((acc, row) => acc + (parseInt(row[calKey]) || 0), 0);
+                    const sum = dataArr.reduce((acc, row) => acc + (parseFloat(String(row[calKey]).replace(/,/g, '')) || 0), 0);
                     return ((sum / dataArr.length) * 100).toFixed(1);
                 };
 
                 const stats = questionsMap.map(q => {
                     const prePercent = parseFloat(calcPercent(preData, q.key));
                     const postPercent = parseFloat(calcPercent(postData, q.key));
-                    
-                    // ເລືອກສະແດງຄຳຖາມຕາມພາສາ (ຖ້າເປັນ 'lo' ແລະ ມີຄຳແປແລ້ວ ໃຫ້ໃຊ້ພາສາລາວ)
                     const displayText = (lang === 'lo' && q.translatedText) ? q.translatedText : q.originalText;
 
                     return {
@@ -554,16 +557,13 @@
                         improvement: (postPercent - prePercent).toFixed(1)
                     };
                 });
-
                 return stats;
             }, [filteredData, questionsMap, lang, prePostKey]);
 
-            // Get bottom 3-5 questions
             const bottomQuestions = useMemo(() => {
                 return [...questionStats].sort((a, b) => a.postPercent - b.postPercent).slice(0, 4); 
             }, [questionStats]);
 
-            // Data ສຳລັບຕາລາງທີ່ສາມາດ Sort ໄດ້
             const sortedQuestionStats = useMemo(() => {
                 let sortableItems = [...questionStats];
                 if (sortConfig !== null) {
@@ -582,12 +582,8 @@
                             bVal = bVal.toLowerCase();
                         }
 
-                        if (aVal < bVal) {
-                            return sortConfig.direction === 'asc' ? -1 : 1;
-                        }
-                        if (aVal > bVal) {
-                            return sortConfig.direction === 'asc' ? 1 : -1;
-                        }
+                        if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+                        if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
                         return 0;
                     });
                 }
@@ -596,13 +592,10 @@
 
             const requestSort = (key) => {
                 let direction = 'asc';
-                if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
-                    direction = 'desc';
-                }
+                if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') direction = 'desc';
                 setSortConfig({ key, direction });
             };
 
-            // Custom Tooltip ສຳລັບກຣາຟຄຳຖາມ
             const QuestionTooltip = ({ active, payload }) => {
                 if (active && payload && payload.length) {
                     const data = payload[0].payload;
@@ -621,7 +614,6 @@
                 return null;
             };
 
-            // --- 4. Organization Analysis ---
             const orgStats = useMemo(() => {
                 if (filteredData.length === 0) return [];
                 
@@ -635,7 +627,8 @@
                 const orgs = {};
                 filteredData.forEach(row => {
                     const org = row[oKey] || 'Unknown';
-                    const isPre = String(row[prePostKey] || '').toLowerCase().includes('pre');
+                    const isPre = isPreTest(row[prePostKey]);
+                    const isPost = isPostTest(row[prePostKey]);
                     const score = parseScore(row[totalScoreKey]);
 
                     if (!orgs[org]) orgs[org] = { org, preSum: 0, preCount: 0, postSum: 0, postCount: 0 };
@@ -643,7 +636,7 @@
                     if (isPre) {
                         orgs[org].preSum += score;
                         orgs[org].preCount += 1;
-                    } else {
+                    } else if (isPost) {
                         orgs[org].postSum += score;
                         orgs[org].postCount += 1;
                     }
@@ -656,7 +649,6 @@
                 })).filter(o => o.Pre_test > 0 || o.Post_test > 0);
             }, [filteredData, totalScoreKey, prePostKey]);
 
-            // --- 5. Ask Gemini ---
             const getAIRecommendation = async () => {
                 if (bottomQuestions.length === 0) return;
                 
@@ -665,7 +657,6 @@
                 setAiRecommendation("");
 
                 const questionTextList = bottomQuestions.map((q, i) => `${i+1}. ${q.text} (${t.repScore}: ${q.postPercent}%)`).join('\n');
-                
                 const customPart = customInstruction.trim() ? `\n\nAdditional user instructions to consider for your advice:\n"${customInstruction.trim()}"` : "";
 
                 const prompt = `
@@ -707,13 +698,11 @@
                 }
             };
 
-            // --- 6. Export Narrative Report ---
             const exportNarrativeReport = () => {
                 const aiText = aiRecommendation 
                     ? aiRecommendation.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br/>') 
                     : t.repNoAi;
                 
-                // ເພີ່ມສ່ວນສະແດງຄຳແນະນຳທາງເລືອກເຂົ້າໃນບົດລາຍງານ
                 const customInstructionHtml = customInstruction.trim() 
                     ? `<p style="color: #4b5563; font-style: italic; font-size: 0.9em;">* ${t.customPromptLabel} ${customInstruction}</p>` 
                     : "";
@@ -749,29 +738,22 @@
                     </html>
                 `;
 
-                const blob = new Blob(['\ufeff', htmlContent], {
-                    type: 'application/msword'
-                });
+                const blob = new Blob(['\ufeff', htmlContent], { type: 'application/msword' });
                 const url = URL.createObjectURL(blob);
                 const link = document.createElement('a');
                 link.href = url;
-                
-                // ຕັ້ງຊື່ໄຟລ໌ຕາມ dashboardTitle ແລະ ຕັດຕົວອັກສອນພິເສດທີ່ອາດຈະມີບັນຫາໃນການຕັ້ງຊື່ໄຟລ໌
                 const safeFileName = dashboardTitle.replace(/[^a-zA-Z0-9\u0E80-\u0EFF\s_-]/g, "_").trim();
                 link.download = `${safeFileName || 'Export'}_Report_${lang.toUpperCase()}.doc`;
-                
                 document.body.appendChild(link);
                 link.click();
                 document.body.removeChild(link);
                 URL.revokeObjectURL(url);
             };
 
-            // --- 7. Export Excel Report (Single Sheet) ---
             const exportExcelReport = () => {
                 const wb = window.XLSX.utils.book_new();
-                const wsData = []; // ອາເຣ (Array) ສຳລັບເກັບຂໍ້ມູນທຸກແຖວ
+                const wsData = []; 
 
-                // 1. KPI Section
                 wsData.push([`--- KPI Summary ---`]);
                 wsData.push(["Metric", "Value"]);
                 wsData.push([t.totalParticipants, kpis.total]);
@@ -789,43 +771,25 @@
                 wsData.push([`${t.sumPost} (${t.maleShort.replace(':', '')})`, kpis.postSumMale]);
                 wsData.push([t.increased, (kpis.postAvg - kpis.preAvg).toFixed(2)]);
                 
-                // ຍະຫວ່າງ 2 ແຖວ
-                wsData.push([]); 
-                wsData.push([]);
+                wsData.push([]); wsData.push([]);
 
-                // 2. Questions Section
                 wsData.push([`--- ${t.qTableTitle} ---`]);
                 wsData.push([t.code, t.qTopic, "Pre-test (%)", "Post-test (%)", t.improvement]);
                 questionStats.forEach(q => {
-                    wsData.push([
-                        q.key.toUpperCase(),
-                        q.text,
-                        q.prePercent,
-                        q.postPercent,
-                        q.improvement
-                    ]);
+                    wsData.push([ q.key.toUpperCase(), q.text, q.prePercent, q.postPercent, q.improvement ]);
                 });
 
-                // ຍະຫວ່າງ 2 ແຖວ
-                wsData.push([]);
-                wsData.push([]);
+                wsData.push([]); wsData.push([]);
 
-                // 3. Organization Section
                 wsData.push([`--- ${t.orgChartTitle} ---`]);
                 wsData.push(["Organization", t.preTestName, t.postTestName]);
                 orgStats.forEach(o => {
-                    wsData.push([
-                        o.name,
-                        o.Pre_test,
-                        o.Post_test
-                    ]);
+                    wsData.push([ o.name, o.Pre_test, o.Post_test ]);
                 });
 
-                // ສ້າງ Sheet ດຽວຈາກຂໍ້ມູນທັງໝົດທີ່ລວມກັນໄວ້
                 const ws = window.XLSX.utils.aoa_to_sheet(wsData);
                 window.XLSX.utils.book_append_sheet(wb, ws, "Analysis Report");
 
-                // Generate filename safely
                 const safeFileName = dashboardTitle.replace(/[^a-zA-Z0-9\u0E80-\u0EFF\s_-]/g, "_").trim();
                 window.XLSX.writeFile(wb, `${safeFileName || 'Export'}_Data_${lang.toUpperCase()}.xlsx`);
             };
@@ -841,7 +805,6 @@
                             </h1>
                             
                             <div className="flex flex-wrap items-center gap-3">
-                                {/* Language Switcher */}
                                 <div className="flex bg-blue-700 rounded p-1 shadow-inner">
                                     <button 
                                         onClick={() => setLang('lo')} 
@@ -1093,15 +1056,15 @@
                                                 <ResponsiveContainer width="100%" height="100%">
                                                     <BarChart
                                                         data={sortedQuestionStats}
-                                                        margin={{ top: 20, right: 10, left: -20, bottom: 5 }}
+                                                        margin={{ top: 30, right: 10, left: -20, bottom: 5 }}
                                                     >
                                                         <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e7eb" />
                                                         <XAxis dataKey="key" tickFormatter={(v) => String(v).toUpperCase()} tick={{fontSize: 12}} />
                                                         <YAxis domain={[0, 100]} tickFormatter={(v) => `${v}%`} tick={{fontSize: 12}} />
                                                         <Tooltip content={<QuestionTooltip />} cursor={{fill: '#f3f4f6'}} />
                                                         <Legend />
-                                                        <Bar dataKey="prePercent" name={t.preTestName} fill="#fbbf24" radius={[4, 4, 0, 0]} />
-                                                        <Bar dataKey="postPercent" name={t.postTestName} fill="#22c55e" radius={[4, 4, 0, 0]} />
+                                                        <Bar dataKey="prePercent" name={t.preTestName} fill="#fbbf24" radius={[4, 4, 0, 0]} label={{ position: 'top', fill: '#4b5563', fontSize: 11, fontWeight: 600, formatter: (val) => `${val}%` }} />
+                                                        <Bar dataKey="postPercent" name={t.postTestName} fill="#22c55e" radius={[4, 4, 0, 0]} label={{ position: 'top', fill: '#4b5563', fontSize: 11, fontWeight: 600, formatter: (val) => `${val}%` }} />
                                                     </BarChart>
                                                 </ResponsiveContainer>
                                             </div>
