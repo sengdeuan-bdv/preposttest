@@ -64,6 +64,7 @@
                 appTitleDefault: "Pre- and Post-Test analysis",
                 exportBtn: "Export Report (.doc)",
                 exportExcelBtn: "ສົ່ງອອກ Excel (.xlsx)",
+                exportMissingBtn: "ກວດສອບຄົນຂາດ Post-test",
                 clearBtn: "ລຶບຂໍ້ມູນ (Clear)",
                 provinceLabel: "ແຂວງ:",
                 orgLabel: "ປະເພດອົງການ:",
@@ -125,6 +126,7 @@
                 appTitleDefault: "Pre- and Post-Test analysis",
                 exportBtn: "Export Report (.doc)",
                 exportExcelBtn: "Export Excel (.xlsx)",
+                exportMissingBtn: "Missing Post-test List",
                 clearBtn: "Clear Data",
                 provinceLabel: "Province:",
                 orgLabel: "Organization:",
@@ -255,6 +257,7 @@
             const [totalScoreKey, setTotalScoreKey] = useState("Total score");
             const [prePostKey, setPrePostKey] = useState("Is this pre or post test?");
             const [genderKey, setGenderKey] = useState("Gender");
+            const [nameKey, setNameKey] = useState("Name");
 
             const [isTranslatingQuestions, setIsTranslatingQuestions] = useState(false);
             const isTranslatingRef = useRef(false);
@@ -319,6 +322,14 @@
                 }
                 setGenderKey(gKey || 'Gender');
 
+                // ຊອກຫາຖັນ Name (ຊື່ຜູ້ເຂົ້າຮ່ວມ)
+                let nKey = headers.find(h => {
+                    const low = h.toLowerCase().replace(/\s+/g, '');
+                    return low.includes('name') || low.includes('ຊື່') || low === 'fullname';
+                });
+                if (!nKey) nKey = headers[0]; // Fallback ເອົາຖັນທຳອິດຖ້າບໍ່ມີຄຳວ່າ Name
+                setNameKey(nKey);
+
                 // 3. ຄົ້ນຫາຖັນ ຄະແນນລວມ (Total Score)
                 let maxCalIndex = -1;
                 calCols.forEach(cal => {
@@ -365,7 +376,11 @@
                 const pKey = headers.find(h => h.toLowerCase().trim() === 'province') || 'province';
                 setProvinceKey(pKey);
 
-                const oKey = headers.find(h => h.toLowerCase().includes('organization') || h.toLowerCase().includes('ອົງການ')) || 'Organization type:';
+                // ຊອກຫາຖັນ Organization ໂດຍເນັ້ນໃສ່ "Organization type:" ເປັນຫຼັກກ່ອນ
+                const oKey = headers.find(h => h.trim().toLowerCase() === 'organization type:') 
+                          || headers.find(h => h.toLowerCase().includes('organization type'))
+                          || headers.find(h => h.toLowerCase().includes('organization') || h.toLowerCase().includes('ອົງການ')) 
+                          || 'Organization type:';
                 setOrgKey(oKey);
 
                 const dKey = headers.find(h => h.trim() === 'Date:');
@@ -383,7 +398,16 @@
                             if (match) my = `${match[2]}/${match[1]}`;
                         }
                     }
-                    return { ...row, _monthYear: my || "Unknown" };
+                    
+                    // ຈັດການຊື່ອົງການຈັດຕັ້ງໃຫ້ເປັນຕົວຫຍໍ້ (MOH, PHO, DHO)
+                    let orgVal = row[oKey] || 'Unknown';
+                    const lowerOrg = String(orgVal).toLowerCase();
+                    if (lowerOrg.includes('ministry of health')) orgVal = 'MOH';
+                    else if (lowerOrg.includes('provincial health office')) orgVal = 'PHO';
+                    else if (lowerOrg.includes('district health office')) orgVal = 'DHO';
+                    else if (lowerOrg.includes('health center')) orgVal = 'HC';
+
+                    return { ...row, _monthYear: my || "Unknown", [oKey]: orgVal };
                 });
 
                 const uniqueProvinces = [...new Set(enrichedData.map(row => row[pKey]).filter(Boolean))];
@@ -421,6 +445,7 @@
                 setTotalScoreKey("Total score");
                 setPrePostKey("Is this pre or post test?");
                 setGenderKey("Gender");
+                setNameKey("Name");
                 
                 setDashboardTitle(translations[lang].appTitleDefault);
                 document.title = translations[lang].appTitleDefault;
@@ -813,6 +838,90 @@
                 window.XLSX.writeFile(wb, `${safeFileName || 'Export'}_Data_${lang.toUpperCase()}.xlsx`);
             };
 
+            // --- 8. Export Missing Post-test Report (Fuzzy Matching 50%) ---
+            const exportMissingReport = () => {
+                // Algorithm ວັດແທກຄວາມຄ້າຍຄືກັນຂອງຕົວອັກສອນ (Levenshtein Distance)
+                const getEditDistance = (a, b) => {
+                    if (a.length === 0) return b.length;
+                    if (b.length === 0) return a.length;
+                    var matrix = [];
+                    for (var i = 0; i <= b.length; i++) { matrix[i] = [i]; }
+                    for (var j = 0; j <= a.length; j++) { matrix[0][j] = j; }
+                    for (var i = 1; i <= b.length; i++) {
+                        for (var j = 1; j <= a.length; j++) {
+                            if (b.charAt(i - 1) == a.charAt(j - 1)) {
+                                matrix[i][j] = matrix[i - 1][j - 1];
+                            } else {
+                                matrix[i][j] = Math.min(matrix[i - 1][j - 1] + 1, Math.min(matrix[i][j - 1] + 1, matrix[i - 1][j] + 1));
+                            }
+                        }
+                    }
+                    return matrix[b.length][a.length];
+                };
+
+                const getSimilarity = (a, b) => {
+                    const aStr = String(a || '').toLowerCase().replace(/\s+/g, '');
+                    const bStr = String(b || '').toLowerCase().replace(/\s+/g, '');
+                    if (!aStr || !bStr) return 0;
+                    if (aStr === bStr) return 100;
+                    const distance = getEditDistance(aStr, bStr);
+                    const maxLen = Math.max(aStr.length, bStr.length);
+                    return ((maxLen - distance) / maxLen) * 100;
+                };
+
+                const preRecords = filteredData.filter(d => isPreTest(d[prePostKey]));
+                const postRecords = filteredData.filter(d => isPostTest(d[prePostKey]));
+
+                const missingData = [];
+
+                preRecords.forEach(pre => {
+                    const preName = pre[nameKey] || "Unknown";
+                    let bestMatch = null;
+                    let maxSim = -1;
+
+                    postRecords.forEach(post => {
+                        const postName = post[nameKey] || "Unknown";
+                        const sim = getSimilarity(preName, postName);
+                        if (sim > maxSim) {
+                            maxSim = sim;
+                            bestMatch = postName;
+                        }
+                    });
+
+                    // ຖ້າຄວາມຄ້າຍຄືກັນບໍ່ຮອດ 100% ຖືວ່າມີໂອກາດບໍ່ໄດ້ຕອບ ຫຼື ພິມຊື່ຜິດ
+                    if (maxSim < 100) {
+                        let status = maxSim >= 50 
+                            ? (lang === 'lo' ? "ອາດຈະແມ່ນຄົນດຽວກັນ (ພິມຊື່ຜິດ)" : "Possible Match (Typo)") 
+                            : (lang === 'lo' ? "ບໍ່ໄດ້ຕອບ Post-test" : "Missing Post-test");
+                        
+                        missingData.push({
+                            "Pre-test Name": preName,
+                            "Organization": pre[orgKey] || "N/A",
+                            "Province": pre[provinceKey] || "N/A",
+                            "Pre-test Score": parseFloat(String(pre[totalScoreKey]).replace(/,/g, '')) || 0,
+                            "Closest Post-test Name": bestMatch || "N/A",
+                            "Similarity (%)": maxSim >= 0 ? maxSim.toFixed(1) + "%" : "0%",
+                            "Status": status
+                        });
+                    }
+                });
+
+                // ຈັດລຽງຕາມຄວາມຄ້າຍຄືກັນ ຈາກຫຼາຍຫາໜ້ອຍ ເພື່ອໃຫ້ກວດສອບງ່າຍ
+                missingData.sort((a, b) => parseFloat(b["Similarity (%)"]) - parseFloat(a["Similarity (%)"]));
+
+                const wb = window.XLSX.utils.book_new();
+                const ws = window.XLSX.utils.json_to_sheet(missingData);
+                
+                // ປັບຂະໜາດຖັນໃຫ້ອ່ານງ່າຍ
+                const wscols = [ {wch: 30}, {wch: 20}, {wch: 15}, {wch: 15}, {wch: 30}, {wch: 15}, {wch: 25} ];
+                ws['!cols'] = wscols;
+
+                window.XLSX.utils.book_append_sheet(wb, ws, "Missing Post-test");
+
+                const safeFileName = dashboardTitle.replace(/[^a-zA-Z0-9\u0E80-\u0EFF\s_-]/g, "_").trim();
+                window.XLSX.writeFile(wb, `${safeFileName || 'Export'}_MissingList_${lang.toUpperCase()}.xlsx`);
+            };
+
             return (
                 <div className="min-h-screen pb-12">
                     {/* Header bar */}
@@ -861,6 +970,13 @@
                                         >
                                             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M8 13h2"/><path d="M8 17h2"/><path d="M14 13h2"/><path d="M14 17h2"/></svg>
                                             {t.exportExcelBtn}
+                                        </button>
+                                        <button 
+                                            onClick={exportMissingReport}
+                                            className="bg-amber-500 hover:bg-amber-600 text-white text-sm px-3 py-1.5 rounded flex items-center gap-2 shadow transition"
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" x2="19" y1="8" y2="14"/><line x1="22" x2="16" y1="11" y2="11"/></svg>
+                                            {t.exportMissingBtn}
                                         </button>
                                     </>
                                 )}
